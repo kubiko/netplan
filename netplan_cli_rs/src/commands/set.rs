@@ -47,7 +47,7 @@ pub fn run(args: SetArgs) -> Result<()> {
     let (key_raw, value) = args
         .key_value
         .split_once('=')
-        .context("Invalid value specified: expected key=value format")?;
+        .context("Invalid value specified")?;
 
     // Prefix with "network." if not already present
     let key = if key_raw.starts_with("network") {
