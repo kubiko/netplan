@@ -5,4 +5,5 @@ pub mod info;
 pub mod ip;
 pub mod migrate;
 pub mod set;
+pub mod status;
 pub mod try_command;
