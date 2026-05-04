@@ -9,7 +9,7 @@ mod ffi;
 mod netplan;
 mod utils;
 
-use commands::{apply, generate, get, info, ip, migrate, set, try_command};
+use commands::{apply, generate, get, info, ip, migrate, set, status, try_command};
 
 // ── CLI skeleton ──────────────────────────────────────────────────────────────
 
@@ -44,6 +44,8 @@ enum Command {
     Set(set::SetArgs),
     /// Show available features
     Info(info::InfoArgs),
+    /// Query networking state of the running system
+    Status(status::StatusArgs),
     /// Try to apply a new netplan config with automatic rollback on timeout or rejection
     Try(try_command::TryArgs),
 }
@@ -75,7 +77,7 @@ fn main() {
 
     let mut raw_args: Vec<String> = std::env::args().collect();
 
-    const SUBCOMMANDS: &[&str] = &["apply", "generate", "get", "set", "info", "ip", "migrate", "try"];
+    const SUBCOMMANDS: &[&str] = &["apply", "generate", "get", "set", "info", "ip", "migrate", "status", "try"];
 
     // First non-option argument (if any).
     let first_positional = raw_args.iter().skip(1).find(|a| !a.starts_with('-'));
@@ -126,6 +128,7 @@ fn main() {
         Command::Ip(args)       => ip::run(args),
         Command::Migrate(args)  => migrate::run(args),
         Command::Set(args)      => set::run(args),
+        Command::Status(args)   => status::run(args),
         Command::Info(args)     => info::run(args),
         Command::Try(args)      => try_command::run(args),
     };
