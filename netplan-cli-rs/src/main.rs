@@ -9,7 +9,7 @@ mod ffi;
 mod netplan;
 mod utils;
 
-use commands::{apply, generate, get, info, ip, set, try_command};
+use commands::{apply, generate, get, info, ip, migrate, set, try_command};
 
 // ── CLI skeleton ──────────────────────────────────────────────────────────────
 
@@ -38,6 +38,8 @@ enum Command {
     Get(get::GetArgs),
     /// Retrieve IP information from the system
     Ip(ip::IpArgs),
+    /// Migration of /etc/network/interfaces to netplan
+    Migrate(migrate::MigrateArgs),
     /// Add/update/delete a setting via a dotted key=value pair
     Set(set::SetArgs),
     /// Show available features
@@ -73,7 +75,7 @@ fn main() {
 
     let mut raw_args: Vec<String> = std::env::args().collect();
 
-    const SUBCOMMANDS: &[&str] = &["apply", "generate", "get", "set", "info", "ip", "try"];
+    const SUBCOMMANDS: &[&str] = &["apply", "generate", "get", "set", "info", "ip", "migrate", "try"];
 
     // First non-option argument (if any).
     let first_positional = raw_args.iter().skip(1).find(|a| !a.starts_with('-'));
@@ -122,6 +124,7 @@ fn main() {
         Command::Generate(args) => generate::run(args),
         Command::Get(args)      => get::run(args),
         Command::Ip(args)       => ip::run(args),
+        Command::Migrate(args)  => migrate::run(args),
         Command::Set(args)      => set::run(args),
         Command::Info(args)     => info::run(args),
         Command::Try(args)      => try_command::run(args),
