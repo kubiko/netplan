@@ -19,13 +19,58 @@ pub const NM_SNAP_SERVICE_NAME: &str = "snap.network-manager.networkmanager.serv
 pub const OVS_CLEANUP_SERVICE: &str = "netplan-ovs-cleanup.service";
 
 pub fn get_configure_path() -> String {
-    std::env::var("NETPLAN_CONFIGURE_PATH")
-        .unwrap_or_else(|_| "/usr/libexec/netplan/configure".to_string())
+    let configured = std::env::var("NETPLAN_CONFIGURE_PATH")
+        .unwrap_or_else(|_| "/usr/libexec/netplan/configure".to_string());
+
+    if Path::new(&configured).exists() {
+        return configured;
+    }
+
+    let parent = Path::new(&configured).parent()
+        .map(|p| p.join("build/src/configure").to_string_lossy().into_owned());
+
+    let fallbacks = [
+        parent.as_deref(),
+        Some("/usr/libexec/netplan/configure"),
+        Some("/usr/lib/netplan/configure"),
+    ];
+
+    for candidate in fallbacks.into_iter().flatten() {
+        if Path::new(candidate).exists() {
+            return candidate.to_string();
+        }
+    }
+
+    configured
 }
 
 pub fn get_generator_path() -> String {
-    std::env::var("NETPLAN_GENERATE_PATH")
-        .unwrap_or_else(|_| "/usr/libexec/netplan/generate".to_string())
+    let configured = std::env::var("NETPLAN_GENERATE_PATH")
+        .unwrap_or_else(|_| "/usr/libexec/netplan/generate".to_string());
+
+    if Path::new(&configured).exists() {
+        return configured;
+    }
+
+    // When the configured path doesn't exist (e.g. tests pointing at project
+    // root before the C generator is installed there), try the meson build
+    // tree and common system install locations as fallbacks.
+    let parent = Path::new(&configured).parent()
+        .map(|p| p.join("build/src/generate").to_string_lossy().into_owned());
+
+    let fallbacks = [
+        parent.as_deref(),
+        Some("/usr/libexec/netplan/generate"),
+        Some("/usr/lib/netplan/generate"),
+    ];
+
+    for candidate in fallbacks.into_iter().flatten() {
+        if Path::new(candidate).exists() {
+            return candidate.to_string();
+        }
+    }
+
+    configured
 }
 
 /// Return the path to the C generator binary.

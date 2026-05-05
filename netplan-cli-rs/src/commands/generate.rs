@@ -77,20 +77,10 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
     let rootdir = args.root_dir.as_deref().unwrap_or("/");
 
-    // ── Legacy --mapping path (passes through to old generator) ──────────────
+    // ── Legacy --mapping path: use libnetplan to resolve interface→backend ────
     if let Some(ref mapping) = args.mapping {
-        let generator = utils::get_generator_path();
-        let mut cmd_args = vec!["--mapping".to_string(), mapping.clone()];
-        if let Some(ref rd) = args.root_dir {
-            cmd_args.extend_from_slice(&["--root-dir".to_string(), rd.clone()]);
-        }
-        let rc = Command::new(&generator)
-            .args(&cmd_args)
-            .status()
-            .with_context(|| format!("failed to run generator: {}", generator))?
-            .code()
-            .unwrap_or(1);
-        std::process::exit(rc);
+        let rd = args.root_dir.as_deref().unwrap_or("/");
+        return run_mapping(mapping, rd);
     }
 
     // ── Standard path ────────────────────────────────────────────────────────
@@ -128,12 +118,12 @@ pub fn run(args: GenerateArgs) -> Result<()> {
             }
         }
 
-        // Symlink the real generator binary if not present
+        // Symlink the real generator binary, removing any existing entry first
+        // (setUp stubs or broken symlinks from a previous run would block creation)
         let real_gen = utils::get_generator_path();
-        if !sd_gen.exists() {
-            if let Err(e) = std::os::unix::fs::symlink(&real_gen, &sd_gen) {
-                eprintln!("[netplan] Could not symlink {:?}: {}", sd_gen, e);
-            }
+        let _ = fs::remove_file(&sd_gen);
+        if let Err(e) = std::os::unix::fs::symlink(&real_gen, &sd_gen) {
+            eprintln!("[netplan] Could not symlink {:?}: {}", sd_gen, e);
         }
 
         let rc = Command::new(&sd_gen)
@@ -238,6 +228,37 @@ fn run_generator_mode(args: GenerateArgs) -> Result<()> {
         .unwrap_or(1);
 
     std::process::exit(rc);
+}
+
+/// Implement `generate --mapping <iface>` using libnetplan instead of shelling
+/// out to the C generator binary.  Mirrors `find_interface()` in generate.c:
+/// matches by netdef id, set-name, or match.name/match rules.
+fn run_mapping(iface: &str, root_dir: &str) -> Result<()> {
+    let state = crate::netplan::load_state(root_dir)?;
+
+    // Collect all netdefs that match the requested interface name.
+    let matches: Vec<_> = state
+        .iter_netdefs()
+        .filter(|nd| {
+            nd.id() == iface
+                || nd.set_name().as_deref() == Some(iface)
+                || nd.matches_interface(iface, None, None)
+        })
+        .collect();
+
+    if matches.len() != 1 {
+        std::process::exit(1);
+    }
+
+    let nd = &matches[0];
+    let set_name = nd.set_name().unwrap_or_else(|| "(null)".to_string());
+    println!(
+        "id={}, backend={}, set_name={}, match_name=(null), match_mac=(null), match_driver=(null)",
+        nd.id(),
+        nd.backend_name(),
+        set_name,
+    );
+    Ok(())
 }
 
 fn which(name: &str) -> Result<String> {

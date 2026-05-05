@@ -2,7 +2,6 @@
 //!
 //! Mirrors `netplan_cli/cli/commands/ip.py`.
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -10,7 +9,6 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
 
-use crate::utils;
 
 // ── Argument types ────────────────────────────────────────────────────────────
 
@@ -55,32 +53,31 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
     let iface = &args.interface;
     let root_dir = &args.root_dir;
 
-    // Call the generator with --mapping to resolve backend for this interface.
-    // Uses NETPLAN_GENERATE_PATH when set (test environments point this to the C binary).
-    let generator = utils::get_generator_path();
-    let mut cmd_args = vec!["--mapping".to_string(), iface.clone()];
-    if root_dir != "/" {
-        cmd_args.extend_from_slice(&["--root-dir".to_string(), root_dir.clone()]);
-    }
+    // Use libnetplan to resolve which netdef manages this interface.
+    // Mirrors find_interface() in generate.c: match by id, set-name, or match rules.
+    let state = match crate::netplan::load_state(root_dir) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("No lease found for interface '{}' (not managed by Netplan)", iface);
+            std::process::exit(1);
+        }
+    };
 
-    let output = Command::new(&generator)
-        .args(&cmd_args)
-        .output()
-        .with_context(|| format!("failed to run generator: {}", generator))?;
+    let matches: Vec<_> = state
+        .iter_netdefs()
+        .filter(|nd| {
+            nd.id() == iface.as_str()
+                || nd.set_name().as_deref() == Some(iface.as_str())
+                || nd.matches_interface(iface, None, None)
+        })
+        .collect();
 
-    if !output.status.success() {
-        eprintln!(
-            "No lease found for interface '{}' (not managed by Netplan)",
-            iface
-        );
+    if matches.len() != 1 {
+        eprintln!("No lease found for interface '{}' (not managed by Netplan)", iface);
         std::process::exit(1);
     }
 
-    // Parse "id=enlol, backend=networkd, set_name=(null), ..." CSV output.
-    let mapping_str = String::from_utf8_lossy(&output.stdout);
-    let mapping = parse_mapping(mapping_str.trim());
-
-    let backend = mapping.get("backend").map(String::as_str).unwrap_or("");
+    let backend = matches[0].backend_name();
 
     let lease_result = match backend {
         "networkd" => find_networkd_lease(iface, root_dir),
@@ -196,19 +193,3 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     bail!("no lease file found (tried internal and dhclient paths in {:?})", base)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Parse the C generator's `--mapping` output into a key→value map.
-///
-/// Format: `id=enlol, backend=networkd, set_name=(null), match_name=lo, ...`
-fn parse_mapping(s: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for part in s.split(',') {
-        let part = part.trim();
-        if let Some((key, value)) = part.split_once('=') {
-            let value = if value == "(null)" { "" } else { value };
-            map.insert(key.trim().to_string(), value.trim().to_string());
-        }
-    }
-    map
-}
