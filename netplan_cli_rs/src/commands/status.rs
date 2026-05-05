@@ -2425,7 +2425,7 @@ fn display_diff_mac(
     missing_sys: Option<&str>,
     missing_np: Option<&str>,
     use_color: bool,
-    all_green: bool,
+    _all_green: bool,
 ) {
     let mac = obj.get("macaddress").and_then(|v| v.as_str());
     let vendor = obj.get("vendor").and_then(|v| v.as_str());
@@ -2435,13 +2435,7 @@ fn display_diff_mac(
 
     if missing_sys.is_none() && missing_np.is_none() {
         if let Some(mac) = mac {
-            let val = if all_green {
-                c_green(&vendor_str(mac), use_color)
-            } else {
-                c_dim(&vendor_str(mac), use_color)
-            };
-            let sign = if all_green { sign_plus(use_color) } else { " ".to_string() };
-            plined(&sign, "MAC Address:", &val);
+            plined(&" ".to_string(), "MAC Address:", &c_dim(&vendor_str(mac), use_color));
         }
         return;
     }
@@ -2464,7 +2458,7 @@ fn display_diff_addresses(
     dhcp4_missing: bool,
     dhcp6_missing: bool,
     use_color: bool,
-    all_green: bool,
+    _all_green: bool,
 ) {
     let addrs = obj.get("addresses").and_then(|v| v.as_array());
     let addrs_slice = addrs.map(|a| a.as_slice()).unwrap_or(&[]);
@@ -2490,7 +2484,7 @@ fn display_diff_addresses(
                 };
                 // If address is in system but not netplan → '+'
                 let is_extra_in_system = missing_np_set.contains(full.as_str());
-                let (sign, val) = if all_green || is_extra_in_system {
+                let (sign, val) = if is_extra_in_system {
                     (sign_plus(use_color), c_green(&addr_str, use_color))
                 } else {
                     (" ".to_string(), c_dim(&addr_str, use_color))
@@ -2517,7 +2511,7 @@ fn display_diff_dns_addresses(
     missing_sys: &[String],
     missing_np: &[String],
     use_color: bool,
-    all_green: bool,
+    _all_green: bool,
 ) {
     let addrs = obj.get("dns_addresses").and_then(|v| v.as_array());
     let empty = vec![];
@@ -2529,7 +2523,7 @@ fn display_diff_dns_addresses(
     for addr in addrs {
         if let Some(s) = addr.as_str() {
             let is_extra = missing_np_set.contains(s);
-            let (sign, val) = if all_green || is_extra {
+            let (sign, val) = if is_extra {
                 (sign_plus(use_color), c_green(s, use_color))
             } else {
                 (" ".to_string(), c_dim(s, use_color))
@@ -2547,7 +2541,7 @@ fn display_diff_dns_search(
     missing_sys: &[String],
     missing_np: &[String],
     use_color: bool,
-    all_green: bool,
+    _all_green: bool,
 ) {
     let search = obj.get("dns_search").and_then(|v| v.as_array());
     let empty = vec![];
@@ -2559,7 +2553,7 @@ fn display_diff_dns_search(
     for s in search {
         if let Some(domain) = s.as_str() {
             let is_extra = missing_np_set.contains(domain);
-            let (sign, val) = if all_green || is_extra {
+            let (sign, val) = if is_extra {
                 (sign_plus(use_color), c_green(domain, use_color))
             } else {
                 (" ".to_string(), c_dim(domain, use_color))
@@ -2578,7 +2572,7 @@ fn display_diff_routes(
     missing_sys: &[DiffRoute],
     missing_np: &[DiffRoute],
     use_color: bool,
-    all_green: bool,
+    _all_green: bool,
 ) {
     let routes = obj.get("routes").and_then(|v| v.as_array());
     let empty = vec![];
@@ -2594,12 +2588,7 @@ fn display_diff_routes(
             if !is_main { continue; }
         }
         let route_str = format_route_for_display(r, verbose);
-        let (sign, val) = if all_green {
-            (sign_plus(use_color), c_green(&route_str, use_color))
-        } else {
-            (" ".to_string(), c_dim(&route_str, use_color))
-        };
-        plined(&sign, title(displayed), &val);
+        plined(&" ".to_string(), title(displayed), &c_dim(&route_str, use_color));
         displayed += 1;
     }
     // missing_np: in system, not netplan → '+'; missing_sys: in netplan, not system → '-'
@@ -2615,25 +2604,22 @@ fn display_diff_routes(
     }
 }
 
-fn display_diff_plain_links(obj: &Map<String, Value>, use_color: bool, all_green: bool) {
-    let sign = if all_green { sign_plus(use_color) } else { " ".to_string() };
-    let style = |s: &str| -> String {
-        if all_green { c_green(s, use_color) } else { c_dim(s, use_color) }
-    };
+fn display_diff_plain_links(obj: &Map<String, Value>, use_color: bool, _all_green: bool) {
+    let sign = " ";
     if let Some(b) = obj.get("bridge").and_then(|v| v.as_str()) {
-        plined(&sign, "Bridge:", &style(b));
+        plined(sign, "Bridge:", &c_dim(b, use_color));
     }
     if let Some(b) = obj.get("bond").and_then(|v| v.as_str()) {
-        plined(&sign, "Bond:", &style(b));
+        plined(sign, "Bond:", &c_dim(b, use_color));
     }
     if let Some(v) = obj.get("vrf").and_then(|v| v.as_str()) {
-        plined(&sign, "VRF:", &style(v));
+        plined(sign, "VRF:", &c_dim(v, use_color));
     }
     let members = obj.get("interfaces").and_then(|v| v.as_array());
     if let Some(members) = members.filter(|m| !m.is_empty()) {
         for (i, m) in members.iter().enumerate() {
             if let Some(name) = m.as_str() {
-                plined(&sign, if i == 0 { "Interfaces:" } else { "" }, &style(name));
+                plined(sign, if i == 0 { "Interfaces:" } else { "" }, &c_dim(name, use_color));
             }
         }
     }
