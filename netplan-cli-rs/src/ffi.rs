@@ -175,6 +175,26 @@ extern "C" {
         driver_name: *const c_char,
     ) -> GBoolean;
 
+    pub fn netplan_netdef_get_dhcp4(netdef: *const NetplanNetDefinition) -> GBoolean;
+    pub fn netplan_netdef_get_dhcp6(netdef: *const NetplanNetDefinition) -> GBoolean;
+    pub fn netplan_netdef_get_link_local_ipv4(netdef: *const NetplanNetDefinition) -> GBoolean;
+    pub fn netplan_netdef_get_link_local_ipv6(netdef: *const NetplanNetDefinition) -> GBoolean;
+    pub fn netplan_netdef_get_accept_ra(netdef: *const NetplanNetDefinition) -> c_int;
+    pub fn netplan_netdef_get_macaddress(
+        netdef: *const NetplanNetDefinition,
+        out_buffer: *mut c_char,
+        out_buffer_size: usize,
+    ) -> isize;
+    pub fn netplan_netdef_get_bridge_link(
+        netdef: *const NetplanNetDefinition,
+    ) -> *mut NetplanNetDefinition;
+    pub fn netplan_netdef_get_bond_link(
+        netdef: *const NetplanNetDefinition,
+    ) -> *mut NetplanNetDefinition;
+    pub fn netplan_netdef_get_vrf_link(
+        netdef: *const NetplanNetDefinition,
+    ) -> *mut NetplanNetDefinition;
+
     // ── util.h ───────────────────────────────────────────────────────────────
 
     pub fn netplan_error_clear(error: *mut *mut NetplanError);

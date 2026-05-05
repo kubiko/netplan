@@ -325,6 +325,82 @@ impl NetDef {
         unsafe { ffi::netplan_netdef_has_match(self.0) != 0 }
     }
 
+    pub fn dhcp4(&self) -> bool {
+        unsafe { ffi::netplan_netdef_get_dhcp4(self.0) != 0 }
+    }
+
+    pub fn dhcp6(&self) -> bool {
+        unsafe { ffi::netplan_netdef_get_dhcp6(self.0) != 0 }
+    }
+
+    pub fn link_local_ipv4(&self) -> bool {
+        unsafe { ffi::netplan_netdef_get_link_local_ipv4(self.0) != 0 }
+    }
+
+    pub fn link_local_ipv6(&self) -> bool {
+        unsafe { ffi::netplan_netdef_get_link_local_ipv6(self.0) != 0 }
+    }
+
+    /// Returns `None` if not configured, `Some(true)` if enabled, `Some(false)` if disabled.
+    pub fn accept_ra(&self) -> Option<bool> {
+        match unsafe { ffi::netplan_netdef_get_accept_ra(self.0) } {
+            0 => None,
+            1 => Some(true),
+            _ => Some(false),
+        }
+    }
+
+    pub fn macaddress(&self) -> Option<String> {
+        let s = read_string_buf(|buf, len| unsafe {
+            ffi::netplan_netdef_get_macaddress(self.0, buf, len)
+        });
+        if s.is_empty() { None } else { Some(s) }
+    }
+
+    pub fn bridge_link_id(&self) -> Option<String> {
+        let ptr = unsafe { ffi::netplan_netdef_get_bridge_link(self.0) };
+        if ptr.is_null() { return None; }
+        let id = read_string_buf(|buf, len| unsafe {
+            ffi::netplan_netdef_get_id(ptr, buf, len)
+        });
+        if id.is_empty() { None } else { Some(id) }
+    }
+
+    pub fn bond_link_id(&self) -> Option<String> {
+        let ptr = unsafe { ffi::netplan_netdef_get_bond_link(self.0) };
+        if ptr.is_null() { return None; }
+        let id = read_string_buf(|buf, len| unsafe {
+            ffi::netplan_netdef_get_id(ptr, buf, len)
+        });
+        if id.is_empty() { None } else { Some(id) }
+    }
+
+    pub fn vrf_link_id(&self) -> Option<String> {
+        let ptr = unsafe { ffi::netplan_netdef_get_vrf_link(self.0) };
+        if ptr.is_null() { return None; }
+        let id = read_string_buf(|buf, len| unsafe {
+            ffi::netplan_netdef_get_id(ptr, buf, len)
+        });
+        if id.is_empty() { None } else { Some(id) }
+    }
+
+    #[allow(dead_code)]
+    pub fn type_str(&self) -> &'static str {
+        match self.def_type() {
+            ffi::NETPLAN_DEF_TYPE_ETHERNET => "ethernet",
+            ffi::NETPLAN_DEF_TYPE_WIFI     => "wifi",
+            ffi::NETPLAN_DEF_TYPE_MODEM    => "modem",
+            ffi::NETPLAN_DEF_TYPE_BRIDGE   => "bridge",
+            ffi::NETPLAN_DEF_TYPE_BOND     => "bond",
+            ffi::NETPLAN_DEF_TYPE_VLAN     => "vlan",
+            ffi::NETPLAN_DEF_TYPE_TUNNEL   => "tunnel",
+            ffi::NETPLAN_DEF_TYPE_VRF      => "vrf",
+            ffi::NETPLAN_DEF_TYPE_DUMMY    => "dummy-device",
+            ffi::NETPLAN_DEF_TYPE_VETH     => "virtual-ethernet",
+            _                              => "other",
+        }
+    }
+
     /// Returns `true` if `name`/`mac`/`driver` all satisfy this netdef's
     /// match rules.  `None` arguments are passed as NULL (wildcard).
     pub fn matches_interface(
