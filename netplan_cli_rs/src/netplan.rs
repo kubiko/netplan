@@ -325,6 +325,19 @@ impl NetDef {
         unsafe { ffi::netplan_netdef_has_match(self.0) != 0 }
     }
 
+    pub fn backend(&self) -> ffi::NetplanBackend {
+        unsafe { ffi::netplan_netdef_get_backend(self.0) }
+    }
+
+    pub fn backend_name(&self) -> &'static str {
+        match self.backend() {
+            ffi::NETPLAN_BACKEND_NETWORKD => "networkd",
+            ffi::NETPLAN_BACKEND_NM       => "NetworkManager",
+            ffi::NETPLAN_BACKEND_OVS      => "openvswitch",
+            _                             => "none",
+        }
+    }
+
     pub fn dhcp4(&self) -> bool {
         unsafe { ffi::netplan_netdef_get_dhcp4(self.0) != 0 }
     }
