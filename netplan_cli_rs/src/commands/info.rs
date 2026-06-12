@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use clap::{Args, ValueEnum};
+use serde_json::json;
 
 // Feature flags generated at build time from /* netplan-feature: <name> */
 // annotations in the C source tree.
@@ -35,15 +36,13 @@ pub fn run(args: InfoArgs) -> Result<()> {
 
     if args.json {
         // Produce output equivalent to json.dumps(…, indent=2)
-        let features_json = flags
-            .iter()
-            .map(|f| format!("      \"{}\"", f))
-            .collect::<Vec<_>>()
-            .join(",\n");
-        println!(
-            "{{\n  \"netplan.io\": {{\n    \"website\": \"{}\",\n    \"features\": [\n{}\n    ]\n  }}\n}}",
-            website, features_json
-        );
+        let value = json!({
+            "netplan.io": {
+                "website": website,
+                "features": flags,
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&value)?);
     } else {
         // YAML (default) – matches Python's hand-formatted output exactly
         println!("netplan.io:");
