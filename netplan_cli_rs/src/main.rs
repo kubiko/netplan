@@ -10,7 +10,11 @@ mod netplan;
 mod utils;
 mod yaml;
 
-use commands::{apply, generate, get, info, ip, migrate, set, status, try_command};
+use self::commands::{apply, generate, get, info, ip, migrate, set, status, try_command};
+use self::commands::{
+    apply::ApplyArgs, generate::GenerateArgs, get::GetArgs, info::InfoArgs, ip::IpArgs,
+    migrate::MigrateArgs, set::SetArgs, status::StatusArgs, try_command::TryArgs,
+};
 
 // ── CLI skeleton ──────────────────────────────────────────────────────────────
 
@@ -28,23 +32,23 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     /// Apply current netplan config to running system
-    Apply(apply::ApplyArgs),
+    Apply(ApplyArgs),
     /// Generate backend specific configuration files from /etc/netplan/*.yaml
-    Generate(generate::GenerateArgs),
+    Generate(GenerateArgs),
     /// Get a setting by specifying a nested key like "ethernets.eth0.addresses", or "all"
-    Get(get::GetArgs),
+    Get(GetArgs),
     /// Retrieve IP information from the system
-    Ip(ip::IpArgs),
+    Ip(IpArgs),
     /// Migration of /etc/network/interfaces to netplan
-    Migrate(migrate::MigrateArgs),
+    Migrate(MigrateArgs),
     /// Add/update/delete a setting via a dotted key=value pair
-    Set(set::SetArgs),
+    Set(SetArgs),
     /// Show available features
-    Info(info::InfoArgs),
+    Info(InfoArgs),
     /// Query networking state of the running system
-    Status(status::StatusArgs),
+    Status(StatusArgs),
     /// Try to apply a new netplan config with automatic rollback on timeout or rejection
-    Try(try_command::TryArgs),
+    Try(TryArgs),
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -52,8 +56,12 @@ enum Command {
 fn main() {
     env_logger::init();
 
-    // Match Python CLI environment setup
-    std::env::set_var("LC_ALL", "C.UTF-8");
+    // Match Python CLI environment setup.
+    // SAFETY: called once, single-threaded, at the very start of main, before
+    // any other code reads the environment.
+    unsafe {
+        std::env::set_var("LC_ALL", "C.UTF-8");
+    }
 
     // ── Detect systemd-generator calling convention ───────────────────────────
     //
@@ -120,7 +128,11 @@ fn main() {
     };
 
     if cli.debug {
-        std::env::set_var("G_MESSAGES_DEBUG", "all");
+        // SAFETY: called once, single-threaded, before any subcommand runs
+        // and before any other code reads the environment.
+        unsafe {
+            std::env::set_var("G_MESSAGES_DEBUG", "all");
+        }
         eprintln!("[netplan] debug mode enabled");
     }
 
@@ -137,8 +149,9 @@ fn main() {
     };
 
     if let Err(e) = result {
-        // Format to match Python: "Command failed: <message>"
-        eprintln!("Command failed: {}", e);
+        // {e:?} includes anyhow's full "Caused by" chain, which is more
+        // useful for debugging than the plain Display message.
+        eprintln!("Command failed: {e:?}");
         std::process::exit(1);
     }
 }
