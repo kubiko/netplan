@@ -50,6 +50,8 @@ enum Command {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
+    env_logger::init();
+
     // Match Python CLI environment setup
     std::env::set_var("LC_ALL", "C.UTF-8");
 

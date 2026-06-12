@@ -6,7 +6,7 @@
 use anyhow::Result;
 use clap::Args;
 
-use crate::netplan;
+use crate::{netplan, utils};
 
 #[derive(Args, Debug)]
 pub struct GetArgs {
@@ -38,7 +38,7 @@ pub fn run(args: GetArgs) -> Result<()> {
         };
 
         // Split on '.' but treat '\.' as a literal dot (negative lookbehind)
-        let prefix: Vec<String> = split_dotted_path(&key);
+        let prefix = utils::split_dotted_path(&key);
 
         netplan::dump_yaml_subtree(&prefix, &full_yaml)?
     };
@@ -46,32 +46,4 @@ pub fn run(args: GetArgs) -> Result<()> {
     // Print without a trailing newline, matching Python's `print(state, end='')`
     print!("{}", output);
     Ok(())
-}
-
-/// Split a dotted key path on `.` but not on `\.`.
-/// Each part has `\.` sequences replaced with `.`.
-///
-/// Equivalent to:
-/// ```python
-/// [s.replace(r'\.', '.') for s in re.split(r'(?<!\\)\.', key)]
-/// ```
-fn split_dotted_path(key: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut chars = key.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' if chars.peek() == Some(&'.') => {
-                chars.next(); // consume the escaped dot
-                current.push('.');
-            }
-            '.' => {
-                parts.push(std::mem::take(&mut current));
-            }
-            _ => current.push(c),
-        }
-    }
-    parts.push(current);
-    parts
 }
