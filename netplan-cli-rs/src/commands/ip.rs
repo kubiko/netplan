@@ -6,7 +6,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand};
 
 // ── Argument types ────────────────────────────────────────────────────────────
@@ -38,11 +38,7 @@ pub struct LeasesArgs {
 pub fn run(args: IpArgs) -> Result<()> {
     match args.subcommand {
         Some(IpSubcommand::Leases(a)) => run_leases(a),
-        None => {
-            eprintln!("Available commands:");
-            eprintln!("  leases   Display IP leases");
-            std::process::exit(1);
-        }
+        None => bail!("Available commands:\n  leases   Display IP leases"),
     }
 }
 
@@ -54,16 +50,8 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
 
     // Use libnetplan to resolve which netdef manages this interface.
     // Mirrors find_interface() in generate.c: match by id, set-name, or match rules.
-    let state = match crate::netplan::load_state(root_dir) {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!(
-                "No lease found for interface '{}' (not managed by Netplan)",
-                iface
-            );
-            std::process::exit(1);
-        }
-    };
+    let state = crate::netplan::load_state(root_dir)
+        .map_err(|_| anyhow!("No lease found for interface '{iface}' (not managed by Netplan)"))?;
 
     let matches: Vec<_> = state
         .netdefs()
@@ -74,39 +62,33 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
         })
         .collect();
 
-    if matches.len() != 1 {
-        eprintln!(
-            "No lease found for interface '{}' (not managed by Netplan)",
-            iface
-        );
-        std::process::exit(1);
-    }
+    let netdef = match matches.as_slice() {
+        [netdef] => netdef,
+        [] => bail!("No lease found for interface '{iface}' (not managed by Netplan)"),
+        _ => bail!(
+            "No lease found for interface '{iface}': multiple netplan configurations match it"
+        ),
+    };
 
-    let backend = matches[0].backend_name();
+    let backend = netdef.backend_name();
 
     let lease_result = match backend {
         "networkd" => find_networkd_lease(iface, root_dir),
         "NetworkManager" => find_nm_lease(iface, root_dir),
-        other => bail!("unknown backend '{}' for interface '{}'", other, iface),
+        other => bail!("unknown backend '{other}' for interface '{iface}'"),
     };
 
     match lease_result {
         Ok(path) => {
             let content = fs::read_to_string(&path).with_context(|| {
-                format!(
-                    "No lease found for interface '{}': cannot read {:?}",
-                    iface, path
-                )
+                format!("No lease found for interface '{iface}': cannot read {path:?}")
             })?;
             for line in content.lines() {
-                println!("{}", line);
+                println!("{line}");
             }
             Ok(())
         }
-        Err(e) => {
-            eprintln!("No lease found for interface '{}': {}", iface, e);
-            std::process::exit(1);
-        }
+        Err(e) => bail!("No lease found for interface '{iface}': {e}"),
     }
 }
 
