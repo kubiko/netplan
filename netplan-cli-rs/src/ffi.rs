@@ -17,10 +17,14 @@ pub type GUint = c_uint;
 
 // ── Opaque C structs ──────────────────────────────────────────────────────────
 
-pub enum NetplanParser {}
-pub enum NetplanState {}
-pub enum NetplanNetDefinition {}
-pub enum NetplanError {}
+#[repr(C)]
+pub struct NetplanParser(c_void);
+#[repr(C)]
+pub struct NetplanState(c_void);
+#[repr(C)]
+pub struct NetplanNetDefinition(c_void);
+#[repr(C)]
+pub struct NetplanError(c_void);
 
 // ── NetplanStateIterator (non-opaque, stack-allocated in C) ───────────────────
 
@@ -59,13 +63,6 @@ pub const NETPLAN_DEF_TYPE_VETH: NetplanDefType = 12;
 /// Returned by `netplan_netdef_get_{id,set_name,...}` when the output buffer
 /// is too small.
 pub const NETPLAN_BUFFER_TOO_SMALL: isize = -2;
-
-// ── Linux memfd_create (glibc / musl wrapper) ─────────────────────────────────
-
-extern "C" {
-    /// `memfd_create(2)` – create an anonymous in-memory file (Linux ≥ 3.17).
-    pub fn memfd_create(name: *const c_char, flags: c_uint) -> c_int;
-}
 
 // ── libnetplan C API ──────────────────────────────────────────────────────────
 

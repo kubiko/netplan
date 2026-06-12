@@ -6,10 +6,11 @@
 
 use std::ffi::CString;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::os::raw::{c_char, c_int};
-use std::os::unix::io::{AsRawFd, FromRawFd, RawFd};
+use std::os::raw::c_char;
+use std::os::unix::io::AsRawFd;
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use nix::sys::memfd::{memfd_create, MFdFlags};
 
 use crate::ffi;
 
@@ -18,39 +19,33 @@ use crate::ffi;
 /// Create an anonymous in-memory file via `memfd_create(2)`.
 /// The returned `File` can be read, written and seeked like a regular file.
 pub fn memfd(name: &str) -> Result<std::fs::File> {
-    let cname = CString::new(name)?;
-    let fd: c_int = unsafe { ffi::memfd_create(cname.as_ptr(), 0) };
-    if fd < 0 {
-        bail!(
-            "memfd_create({:?}) failed: {}",
-            name,
-            std::io::Error::last_os_error()
-        );
-    }
-    Ok(unsafe { std::fs::File::from_raw_fd(fd) })
+    let fd = memfd_create(name, MFdFlags::empty())
+        .with_context(|| format!("memfd_create({:?}) failed", name))?;
+    Ok(std::fs::File::from(fd))
 }
 
 // ── Error extraction ──────────────────────────────────────────────────────────
 
-/// Drain an error pointer into a `String` and free the underlying `GError`.
+/// Drain an error pointer into an [`anyhow::Error`] and free the underlying
+/// `GError`.
 ///
 /// # Safety
 /// `error` must be a valid (possibly null) `*mut NetplanError`.  After this
 /// call `*error` is `NULL`.
-pub unsafe fn drain_error(error: *mut ffi::NetplanError) -> String {
+pub unsafe fn drain_error(error: *mut ffi::NetplanError) -> anyhow::Error {
     if error.is_null() {
-        return "unknown libnetplan error".to_string();
+        return anyhow!("unknown libnetplan error");
     }
-    let mut buf = vec![0u8; 2048];
+    let mut buf = [0u8; 2048];
     let n = ffi::netplan_error_message(error, buf.as_mut_ptr() as *mut c_char, buf.len());
     // netplan_error_clear takes **NetplanError; we pass a pointer to a local copy
     let mut p = error;
     ffi::netplan_error_clear(&mut p);
     if n > 1 {
         let n = (n as usize - 1).min(buf.len()); // exclude NUL terminator
-        String::from_utf8_lossy(&buf[..n]).into_owned()
+        anyhow!("{}", String::from_utf8_lossy(&buf[..n]))
     } else {
-        "unknown libnetplan error".to_string()
+        anyhow!("unknown libnetplan error")
     }
 }
 
@@ -78,9 +73,12 @@ impl Parser {
     pub fn load_yaml_hierarchy(&mut self, rootdir: &str) -> Result<()> {
         let c = CString::new(rootdir)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` is a valid parser pointer for the lifetime of `self`;
+        // `c` is a valid NUL-terminated string; `err` is a valid out-pointer.
         let ok = unsafe { ffi::netplan_parser_load_yaml_hierarchy(self.0, c.as_ptr(), &mut err) };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
@@ -89,45 +87,65 @@ impl Parser {
     pub fn load_yaml_file(&mut self, path: &str) -> Result<()> {
         let c = CString::new(path)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` is a valid parser pointer; `c` is a valid
+        // NUL-terminated string; `err` is a valid out-pointer.
         let ok = unsafe { ffi::netplan_parser_load_yaml(self.0, c.as_ptr(), &mut err) };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
 
-    /// Parse YAML from an already-opened file descriptor.
-    /// The caller must seek `fd` to the desired start position before calling.
-    pub fn load_yaml_from_fd(&mut self, fd: RawFd) -> Result<()> {
+    /// Parse YAML from an already-opened file.
+    /// The caller must seek `file` to the desired start position before calling.
+    pub fn load_yaml_from_fd(&mut self, file: &std::fs::File) -> Result<()> {
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
-        let ok = unsafe { ffi::netplan_parser_load_yaml_from_fd(self.0, fd, &mut err) };
+        // SAFETY: `self.0` is a valid parser pointer; `file` owns a valid fd
+        // for the duration of this call; `err` is a valid out-pointer.
+        let ok =
+            unsafe { ffi::netplan_parser_load_yaml_from_fd(self.0, file.as_raw_fd(), &mut err) };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
 
-    /// Mark fields in the provided FD as nullable (to-be-deleted).
-    /// Seek `fd` to position 0 before calling.
-    pub fn load_nullable_fields(&mut self, fd: RawFd) -> Result<()> {
+    /// Mark fields in the provided file as nullable (to-be-deleted).
+    /// Seek `file` to position 0 before calling.
+    pub fn load_nullable_fields(&mut self, file: &std::fs::File) -> Result<()> {
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
-        let ok = unsafe { ffi::netplan_parser_load_nullable_fields(self.0, fd, &mut err) };
+        // SAFETY: `self.0` is a valid parser pointer; `file` owns a valid fd
+        // for the duration of this call; `err` is a valid out-pointer.
+        let ok =
+            unsafe { ffi::netplan_parser_load_nullable_fields(self.0, file.as_raw_fd(), &mut err) };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
 
     /// Mark netdefs / globals as nullable overrides constrained to `filename`.
-    /// Seek `fd` to position 0 before calling.
-    pub fn load_nullable_overrides(&mut self, fd: RawFd, filename: &str) -> Result<()> {
+    /// Seek `file` to position 0 before calling.
+    pub fn load_nullable_overrides(&mut self, file: &std::fs::File, filename: &str) -> Result<()> {
         let c = CString::new(filename)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` is a valid parser pointer; `file` owns a valid fd
+        // for the duration of this call; `c` is a valid NUL-terminated string;
+        // `err` is a valid out-pointer.
         let ok = unsafe {
-            ffi::netplan_parser_load_nullable_overrides(self.0, fd, c.as_ptr(), &mut err)
+            ffi::netplan_parser_load_nullable_overrides(
+                self.0,
+                file.as_raw_fd(),
+                c.as_ptr(),
+                &mut err,
+            )
         };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
@@ -135,6 +153,8 @@ impl Parser {
 
 impl Drop for Parser {
     fn drop(&mut self) {
+        // SAFETY: `self.0` was created by `netplan_parser_new` and is only
+        // freed here, on drop.
         unsafe { ffi::netplan_parser_clear(&mut self.0) };
     }
 }
@@ -146,6 +166,8 @@ pub struct State(*mut ffi::NetplanState);
 
 impl State {
     pub fn new() -> Result<Self> {
+        // SAFETY: FFI call with no preconditions; returns either a valid
+        // pointer or NULL, both checked below.
         let s = unsafe { ffi::netplan_state_new() };
         if s.is_null() {
             bail!("netplan_state_new returned NULL");
@@ -156,10 +178,13 @@ impl State {
     /// Validate the parser contents and transfer ownership into this state.
     pub fn import_parser_results(&mut self, parser: &mut Parser) -> Result<()> {
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` and `parser.as_ptr()` are valid pointers owned by
+        // their respective wrappers; `err` is a valid out-pointer.
         let ok =
             unsafe { ffi::netplan_state_import_parser_results(self.0, parser.as_ptr(), &mut err) };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
@@ -169,9 +194,13 @@ impl State {
         let mut tmp = memfd("np-dump")?;
         let fd = tmp.as_raw_fd();
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` is a valid state pointer; `fd` is a valid,
+        // writable file descriptor owned by `tmp`; `err` is a valid
+        // out-pointer.
         let ok = unsafe { ffi::netplan_state_dump_yaml(self.0, fd, &mut err) };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         tmp.seek(SeekFrom::Start(0))?;
         let mut out = String::new();
@@ -184,11 +213,14 @@ impl State {
         let cf = CString::new(filename)?;
         let cr = CString::new(rootdir)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` is a valid state pointer; `cf`/`cr` are valid
+        // NUL-terminated strings; `err` is a valid out-pointer.
         let ok = unsafe {
             ffi::netplan_state_write_yaml_file(self.0, cf.as_ptr(), cr.as_ptr(), &mut err)
         };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
@@ -199,11 +231,14 @@ impl State {
         let cf = CString::new(default_filename)?;
         let cr = CString::new(rootdir)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+        // SAFETY: `self.0` is a valid state pointer; `cf`/`cr` are valid
+        // NUL-terminated strings; `err` is a valid out-pointer.
         let ok = unsafe {
             ffi::netplan_state_update_yaml_hierarchy(self.0, cf.as_ptr(), cr.as_ptr(), &mut err)
         };
         if ok == 0 {
-            bail!("{}", unsafe { drain_error(err) });
+            // SAFETY: `err` was set by the call above on failure.
+            return Err(unsafe { drain_error(err) });
         }
         Ok(())
     }
@@ -211,10 +246,12 @@ impl State {
     /// Iterate over all `NetDefinition` objects in this state.
     ///
     /// The returned iterator borrows `self` for the duration of iteration.
-    pub fn iter_netdefs(&self) -> NetDefIter {
+    pub fn netdefs(&self) -> impl Iterator<Item = NetDef> + '_ {
         let mut iter = ffi::NetplanStateIterator {
             placeholder: std::ptr::null_mut(),
         };
+        // SAFETY: `self.0` is a valid state pointer; `iter` is a freshly
+        // initialised, stack-allocated iterator struct.
         unsafe { ffi::netplan_state_iterator_init(self.0, &mut iter) };
         NetDefIter { iter }
     }
@@ -222,6 +259,8 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
+        // SAFETY: `self.0` was created by `netplan_state_new` and is only
+        // freed here, on drop.
         unsafe { ffi::netplan_state_clear(&mut self.0) };
     }
 }
@@ -231,7 +270,8 @@ impl Drop for State {
 /// Iterator over `NetDef` references inside a `State`.
 ///
 /// The pointed-to objects are owned by the `State`; do not outlive it.
-pub struct NetDefIter {
+/// Constructed only via [`State::netdefs`].
+struct NetDefIter {
     iter: ffi::NetplanStateIterator,
 }
 
@@ -239,9 +279,13 @@ impl Iterator for NetDefIter {
     type Item = NetDef;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // SAFETY: `self.iter` was initialised by `netplan_state_iterator_init`
+        // and is only ever accessed through this iterator.
         if unsafe { ffi::netplan_state_iterator_has_next(&mut self.iter) } == 0 {
             return None;
         }
+        // SAFETY: `has_next` returned true, so the iterator has at least one
+        // more element to yield.
         let ptr = unsafe { ffi::netplan_state_iterator_next(&mut self.iter) };
         if ptr.is_null() {
             None
@@ -260,6 +304,8 @@ pub struct NetDef(*mut ffi::NetplanNetDefinition);
 
 impl NetDef {
     pub fn def_type(&self) -> ffi::NetplanDefType {
+        // SAFETY: `self.0` is a valid netdef pointer owned by the `State`
+        // this `NetDef` was obtained from.
         unsafe { ffi::netplan_netdef_get_type(self.0) }
     }
 
@@ -291,11 +337,15 @@ impl NetDef {
 
     /// The Netplan ID string (equals interface name for virtual interfaces).
     pub fn id(&self) -> String {
+        // SAFETY: `self.0` is a valid netdef pointer; `buf`/`len` describe the
+        // growable buffer owned by `read_string_buf`.
         read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(self.0, buf, len) })
     }
 
     /// The `set-name` value, or `None` if not configured.
     pub fn set_name(&self) -> Option<String> {
+        // SAFETY: `self.0` is a valid netdef pointer; `buf`/`len` describe the
+        // growable buffer owned by `read_string_buf`.
         let s = read_string_buf(|buf, len| unsafe {
             ffi::netplan_netdef_get_set_name(self.0, buf, len)
         });
@@ -308,10 +358,12 @@ impl NetDef {
 
     /// `true` if the netdef contains a `match:` stanza.
     pub fn has_match(&self) -> bool {
+        // SAFETY: `self.0` is a valid netdef pointer.
         unsafe { ffi::netplan_netdef_has_match(self.0) != 0 }
     }
 
     pub fn backend(&self) -> ffi::NetplanBackend {
+        // SAFETY: `self.0` is a valid netdef pointer.
         unsafe { ffi::netplan_netdef_get_backend(self.0) }
     }
 
@@ -325,23 +377,28 @@ impl NetDef {
     }
 
     pub fn dhcp4(&self) -> bool {
+        // SAFETY: `self.0` is a valid netdef pointer.
         unsafe { ffi::netplan_netdef_get_dhcp4(self.0) != 0 }
     }
 
     pub fn dhcp6(&self) -> bool {
+        // SAFETY: `self.0` is a valid netdef pointer.
         unsafe { ffi::netplan_netdef_get_dhcp6(self.0) != 0 }
     }
 
     pub fn link_local_ipv4(&self) -> bool {
+        // SAFETY: `self.0` is a valid netdef pointer.
         unsafe { ffi::netplan_netdef_get_link_local_ipv4(self.0) != 0 }
     }
 
     pub fn link_local_ipv6(&self) -> bool {
+        // SAFETY: `self.0` is a valid netdef pointer.
         unsafe { ffi::netplan_netdef_get_link_local_ipv6(self.0) != 0 }
     }
 
     /// Returns `None` if not configured, `Some(true)` if enabled, `Some(false)` if disabled.
     pub fn accept_ra(&self) -> Option<bool> {
+        // SAFETY: `self.0` is a valid netdef pointer.
         match unsafe { ffi::netplan_netdef_get_accept_ra(self.0) } {
             0 => None,
             1 => Some(true),
@@ -350,6 +407,8 @@ impl NetDef {
     }
 
     pub fn macaddress(&self) -> Option<String> {
+        // SAFETY: `self.0` is a valid netdef pointer; `buf`/`len` describe the
+        // growable buffer owned by `read_string_buf`.
         let s = read_string_buf(|buf, len| unsafe {
             ffi::netplan_netdef_get_macaddress(self.0, buf, len)
         });
@@ -361,10 +420,14 @@ impl NetDef {
     }
 
     pub fn bridge_link_id(&self) -> Option<String> {
+        // SAFETY: `self.0` is a valid netdef pointer; the returned pointer is
+        // either NULL or a netdef owned by the same `State`, checked below.
         let ptr = unsafe { ffi::netplan_netdef_get_bridge_link(self.0) };
         if ptr.is_null() {
             return None;
         }
+        // SAFETY: `ptr` was just checked non-null and points to a valid
+        // netdef owned by the `State`.
         let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
         if id.is_empty() {
             None
@@ -374,10 +437,14 @@ impl NetDef {
     }
 
     pub fn bond_link_id(&self) -> Option<String> {
+        // SAFETY: `self.0` is a valid netdef pointer; the returned pointer is
+        // either NULL or a netdef owned by the same `State`, checked below.
         let ptr = unsafe { ffi::netplan_netdef_get_bond_link(self.0) };
         if ptr.is_null() {
             return None;
         }
+        // SAFETY: `ptr` was just checked non-null and points to a valid
+        // netdef owned by the `State`.
         let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
         if id.is_empty() {
             None
@@ -387,10 +454,14 @@ impl NetDef {
     }
 
     pub fn vrf_link_id(&self) -> Option<String> {
+        // SAFETY: `self.0` is a valid netdef pointer; the returned pointer is
+        // either NULL or a netdef owned by the same `State`, checked below.
         let ptr = unsafe { ffi::netplan_netdef_get_vrf_link(self.0) };
         if ptr.is_null() {
             return None;
         }
+        // SAFETY: `ptr` was just checked non-null and points to a valid
+        // netdef owned by the `State`.
         let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
         if id.is_empty() {
             None
@@ -422,6 +493,9 @@ impl NetDef {
         let cn = CString::new(name).unwrap_or_default();
         let cm = mac.and_then(|m| CString::new(m).ok());
         let cd = driver.and_then(|d| CString::new(d).ok());
+        // SAFETY: `self.0` is a valid netdef pointer; `cn` is a valid
+        // NUL-terminated string; `cm`/`cd` are either NULL or valid
+        // NUL-terminated strings.
         unsafe {
             ffi::netplan_netdef_match_interface(
                 self.0,
@@ -447,11 +521,14 @@ pub fn load_state(rootdir: &str) -> Result<State> {
 
 /// Extract a YAML subtree keyed by `prefix_path` from `full_yaml`.
 ///
-/// `prefix_path` is a slice of path components, e.g.
-/// `&["network", "ethernets", "eth0"]`.  The TAB-joining and FD plumbing
+/// `prefix_path` is an iterator of path components, e.g.
+/// `["network", "ethernets", "eth0"]`.  The TAB-joining and FD plumbing
 /// are handled internally.
-pub fn dump_yaml_subtree(prefix_path: &[String], full_yaml: &str) -> Result<String> {
-    let tab_prefix = prefix_path.join("\t");
+pub fn dump_yaml_subtree<'a>(
+    prefix_path: impl Iterator<Item = &'a str>,
+    full_yaml: &str,
+) -> Result<String> {
+    let tab_prefix = prefix_path.collect::<Vec<_>>().join("\t");
     let c_prefix = CString::new(tab_prefix)?;
 
     // Write full YAML into input memfd
@@ -462,6 +539,8 @@ pub fn dump_yaml_subtree(prefix_path: &[String], full_yaml: &str) -> Result<Stri
     let mut output = memfd("np-subtree-out")?;
 
     let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+    // SAFETY: `c_prefix` is a valid NUL-terminated string; `input`/`output`
+    // own valid file descriptors; `err` is a valid out-pointer.
     let ok = unsafe {
         ffi::netplan_util_dump_yaml_subtree(
             c_prefix.as_ptr(),
@@ -471,7 +550,8 @@ pub fn dump_yaml_subtree(prefix_path: &[String], full_yaml: &str) -> Result<Stri
         )
     };
     if ok == 0 {
-        bail!("{}", unsafe { drain_error(err) });
+        // SAFETY: `err` was set by the call above on failure.
+        return Err(unsafe { drain_error(err) });
     }
 
     output.seek(SeekFrom::Start(0))?;
@@ -486,8 +566,11 @@ pub fn dump_yaml_subtree(prefix_path: &[String], full_yaml: &str) -> Result<Stri
 ///
 /// * `obj_path` – path components, e.g. `["network", "ethernets", "eth0"]`
 /// * `payload`  – YAML value, e.g. `"{dhcp4: true}"` or `"NULL"`
-pub fn create_yaml_patch(obj_path: &[String], payload: &str) -> Result<std::fs::File> {
-    let tab_path = obj_path.join("\t");
+pub fn create_yaml_patch<'a>(
+    obj_path: impl Iterator<Item = &'a str>,
+    payload: &str,
+) -> Result<std::fs::File> {
+    let tab_path = obj_path.collect::<Vec<_>>().join("\t");
     let c_path = CString::new(tab_path)?;
     let c_payload = CString::new(payload)?;
 
@@ -495,11 +578,15 @@ pub fn create_yaml_patch(obj_path: &[String], payload: &str) -> Result<std::fs::
     let fd = tmp.as_raw_fd();
 
     let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
+    // SAFETY: `c_path`/`c_payload` are valid NUL-terminated strings; `fd` is
+    // a valid, writable file descriptor owned by `tmp`; `err` is a valid
+    // out-pointer.
     let ok = unsafe {
         ffi::netplan_util_create_yaml_patch(c_path.as_ptr(), c_payload.as_ptr(), fd, &mut err)
     };
     if ok == 0 {
-        bail!("{}", unsafe { drain_error(err) });
+        // SAFETY: `err` was set by the call above on failure.
+        return Err(unsafe { drain_error(err) });
     }
     Ok(tmp)
 }
@@ -521,7 +608,11 @@ where
             buf.resize(buf.len() * 2, 0);
             continue;
         }
-        if n <= 0 {
+        if n < 0 {
+            log::warn!("libnetplan string getter returned unexpected error code {n}");
+            return String::new();
+        }
+        if n == 0 {
             return String::new();
         }
         let content_len = (n as usize - 1).min(buf.len()); // exclude NUL

@@ -241,7 +241,7 @@ fn run_mapping(iface: &str, root_dir: &str) -> Result<()> {
 
     // Collect all netdefs that match the requested interface name.
     let matches: Vec<_> = state
-        .iter_netdefs()
+        .netdefs()
         .filter(|nd| {
             nd.id() == iface
                 || nd.set_name().as_deref() == Some(iface)

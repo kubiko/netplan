@@ -66,7 +66,7 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
     };
 
     let matches: Vec<_> = state
-        .iter_netdefs()
+        .netdefs()
         .filter(|nd| {
             nd.id() == iface.as_str()
                 || nd.set_name().as_deref() == Some(iface.as_str())

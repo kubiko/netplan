@@ -1852,7 +1852,7 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
     }
 
     // Override with C API values (more reliable for dhcp4/dhcp6/link_local/accept_ra/macaddress/links)
-    for netdef in state.iter_netdefs() {
+    for netdef in state.netdefs() {
         let id = netdef.id();
         if let Some(iface) = ifaces.get_mut(&id) {
             iface.dhcp4 = netdef.dhcp4();
