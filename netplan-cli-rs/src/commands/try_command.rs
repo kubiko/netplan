@@ -10,7 +10,7 @@
 use std::io::{BufRead, Write};
 use std::os::raw::c_int;
 use std::path::Path;
-use std::sync::atomic::{AtomicI32, Ordering};
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -23,11 +23,13 @@ const SIGINT: c_int = 2;
 const SIGTERM: c_int = 15;
 const SIGUSR1: c_int = 10;
 
-// Stores the last signal number received (0 = none).
-static SIGNAL_RECEIVED: AtomicI32 = AtomicI32::new(0);
+// Stores the last signal number received (0 = none). `c_int` is only
+// guaranteed to be `i32` on the platforms we care about, so widen it to
+// `i64` here to avoid relying on that equivalence.
+static SIGNAL_RECEIVED: AtomicI64 = AtomicI64::new(0);
 
 unsafe extern "C" fn signal_handler(sig: c_int) {
-    SIGNAL_RECEIVED.store(sig, Ordering::SeqCst);
+    SIGNAL_RECEIVED.store(sig as i64, Ordering::SeqCst);
 }
 
 extern "C" {
@@ -175,11 +177,7 @@ fn wait_for_confirmation(timeout: u64) -> Outcome {
     });
 
     for remaining in (0..=timeout).rev() {
-        print!(
-            "Changes will revert in {:>width$} seconds\r",
-            remaining,
-            width = width
-        );
+        print!("Changes will revert in {remaining:>width$} seconds\r");
         std::io::stdout().flush().ok();
 
         // Check for ENTER (wait up to 1 second)
@@ -194,10 +192,10 @@ fn wait_for_confirmation(timeout: u64) -> Outcome {
 
         // Check for signals
         let sig = SIGNAL_RECEIVED.swap(0, Ordering::SeqCst);
-        if sig == SIGUSR1 {
+        if sig == SIGUSR1 as i64 {
             return Outcome::Accepted;
         }
-        if sig == SIGINT || sig == SIGTERM {
+        if sig == SIGINT as i64 || sig == SIGTERM as i64 {
             return Outcome::Rejected;
         }
     }
