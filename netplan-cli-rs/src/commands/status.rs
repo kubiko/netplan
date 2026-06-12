@@ -3,6 +3,7 @@
 //! Mirrors `netplan_cli/cli/commands/status.py` and `netplan_cli/cli/state.py`.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::process::Command;
 
@@ -42,6 +43,124 @@ pub struct StatusArgs {
     pub root_dir: String,
 }
 
+// ── Entry point ───────────────────────────────────────────────────────────────
+
+pub fn run(args: StatusArgs) -> Result<()> {
+    // --diff-only implies --diff, both need all interfaces
+    let show_all = args.all || args.diff || args.diff_only;
+
+    // Gather system data
+    let iproute2 = query_iproute2().context("Cannot query iproute2")?;
+    let networkd = query_networkd().context("Cannot query systemd-networkd")?;
+    if iproute2.is_empty() || networkd.is_empty() {
+        eprintln!("Could not query iproute2 or systemd-networkd");
+        std::process::exit(1);
+    }
+
+    let nm_data = query_nm();
+    let (routes4, routes6) = query_routes();
+    let (dns_addresses, dns_search) = query_resolved();
+
+    // Build interface list
+    let mut ifaces: Vec<IfaceData> = iproute2
+        .iter()
+        .map(|ip| {
+            build_iface(
+                ip,
+                &networkd,
+                &nm_data,
+                &dns_addresses,
+                &dns_search,
+                &routes4,
+                &routes6,
+            )
+        })
+        .collect();
+
+    correlate_members_and_uplinks(&mut ifaces);
+
+    // Filter for online state: non-DOWN interfaces
+    let active: Vec<&IfaceData> = ifaces.iter().filter(|i| i.operstate != "DOWN").collect();
+    let online = query_online_state(&active);
+
+    let total = ifaces.len();
+
+    // Apply interface name filter
+    if let Some(ifname) = &args.ifname {
+        if !ifaces.iter().any(|i| i.name == *ifname) {
+            eprintln!("Could not find interface {}", ifname);
+            std::process::exit(1);
+        }
+    }
+
+    // Build state map (insertion order via serde_json preserve_order)
+    let mut state: Map<String, Value> = Map::new();
+
+    let mut global = Map::new();
+    global.insert("online".into(), Value::Bool(online));
+    global.insert(
+        "nameservers".into(),
+        Value::Object(resolvconf_json(&args.root_dir)),
+    );
+    state.insert("netplan-global-state".into(), Value::Object(global));
+
+    let iter: Box<dyn Iterator<Item = &IfaceData>> = if show_all {
+        Box::new(ifaces.iter())
+    } else if let Some(target) = &args.ifname {
+        // When a specific interface is requested: include it even if DOWN
+        let target = target.clone();
+        Box::new(ifaces.iter().filter(move |i| i.name == target))
+    } else {
+        Box::new(ifaces.iter().filter(|i| i.operstate != "DOWN"))
+    };
+
+    for iface in iter {
+        state.insert(iface.name.clone(), Value::Object(iface.to_json_obj()));
+    }
+
+    let format = args.format.to_lowercase();
+
+    if args.diff || args.diff_only {
+        let netplan_ifaces = load_netplan_ifaces(&args.root_dir);
+        let report = compute_diff(&state, &netplan_ifaces, args.ifname.as_deref());
+
+        match format.as_str() {
+            "json" => {
+                println!("{}", python_json_dumps(&diff_to_json(&report)));
+            }
+            "yaml" => {
+                let json_val = diff_to_json(&report);
+                if let Value::Object(m) = json_val {
+                    print!("{}", render_yaml(&m));
+                }
+            }
+            _ => {
+                pretty_print_diff(
+                    &state,
+                    &report,
+                    args.verbose,
+                    args.diff_only,
+                    args.ifname.as_deref(),
+                );
+            }
+        }
+    } else {
+        match format.as_str() {
+            "json" => {
+                println!("{}", python_json_dumps(&Value::Object(state)));
+            }
+            "yaml" => {
+                print!("{}", render_yaml(&state));
+            }
+            _ => {
+                pretty_print(&state, total, args.ifname.as_deref(), args.verbose);
+            }
+        }
+    }
+
+    Ok(())
+}
+
 // ── Device type mapping ───────────────────────────────────────────────────────
 
 fn device_type(nd_type: &str) -> Option<&'static str> {
@@ -68,6 +187,24 @@ fn device_type(nd_type: &str) -> Option<&'static str> {
         "ieee80211_radiotap" => Some("wifi"),
         "none" => None,
         _ => None,
+    }
+}
+
+// ── Backends ──────────────────────────────────────────────────────────────────
+
+/// The handful of backends netplan can hand an interface off to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backend {
+    Networkd,
+    NetworkManager,
+}
+
+impl fmt::Display for Backend {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Backend::Networkd => "networkd",
+            Backend::NetworkManager => "NetworkManager",
+        })
     }
 }
 
@@ -138,27 +275,27 @@ impl IfaceData {
         }
     }
 
-    fn backend(&self) -> Option<&'static str> {
+    fn backend(&self) -> Option<Backend> {
         let setup = self.nd_setup_state.as_deref().unwrap_or("");
         let netfile = self.nd_network_file.as_deref().unwrap_or("");
         if !setup.contains("unmanaged") && netfile.contains("run/systemd/network/10-netplan-") {
-            return Some("networkd");
+            return Some(Backend::Networkd);
         }
         let nm_file = self.nm_filename.as_deref().unwrap_or("");
         if nm_file.contains("run/NetworkManager/system-connections/netplan-") {
-            return Some("NetworkManager");
+            return Some(Backend::NetworkManager);
         }
         None
     }
 
     fn netdef_id(&self) -> Option<String> {
         match self.backend() {
-            Some("networkd") => {
+            Some(Backend::Networkd) => {
                 let netfile = self.nd_network_file.as_deref()?;
                 let after = netfile.split("run/systemd/network/10-netplan-").nth(1)?;
                 Some(after.split(".network").next()?.to_string())
             }
-            Some("NetworkManager") => {
+            Some(Backend::NetworkManager) => {
                 let nm_file = self.nm_filename.as_deref()?;
                 let after = nm_file
                     .split("run/NetworkManager/system-connections/netplan-")
@@ -189,7 +326,7 @@ impl IfaceData {
         if self.iface_type() != Some("wifi") {
             return None;
         }
-        if self.backend() == Some("NetworkManager") {
+        if self.backend() == Some(Backend::NetworkManager) {
             if let Some(nm_name) = &self.nm_name {
                 return query_nm_ssid(nm_name);
             }
@@ -218,7 +355,7 @@ impl IfaceData {
 
     fn activation_mode(&self) -> Option<String> {
         match self.backend() {
-            Some("networkd") => {
+            Some(Backend::Networkd) => {
                 for line in self.networkctl_text.lines() {
                     let line = line.trim();
                     if let Some(rest) = line.strip_prefix("Activation Policy: ") {
@@ -232,7 +369,7 @@ impl IfaceData {
                 }
                 None
             }
-            Some("NetworkManager") => {
+            Some(Backend::NetworkManager) => {
                 let autoconnect = self.nm_autoconnect.as_deref().unwrap_or("yes");
                 if autoconnect == "no" {
                     Some("manual".to_string())
@@ -334,7 +471,12 @@ impl IfaceData {
 
 // ── System queries ────────────────────────────────────────────────────────────
 
-fn run_cmd(args: &[&str]) -> Result<String> {
+/// Run `args[0] args[1..]` and capture its stdout as a string.
+///
+/// Unlike [`crate::utils::run_cmd`], which runs a command with inherited
+/// stdio and returns its exit code, this is for commands whose output we
+/// need to parse.
+fn capture_cmd(args: &[&str]) -> Result<String> {
     let out = Command::new(args[0])
         .args(&args[1..])
         .output()
@@ -343,19 +485,19 @@ fn run_cmd(args: &[&str]) -> Result<String> {
 }
 
 fn query_iproute2() -> Result<Vec<Value>> {
-    let out = run_cmd(&["ip", "-d", "-j", "addr"])?;
+    let out = capture_cmd(&["ip", "-d", "-j", "addr"])?;
     let v: Value = serde_json::from_str(&out).context("ip addr JSON parse failed")?;
     Ok(v.as_array().cloned().unwrap_or_default())
 }
 
 fn query_networkd() -> Result<Vec<Value>> {
-    let out = run_cmd(&["networkctl", "--json=short"])?;
+    let out = capture_cmd(&["networkctl", "--json=short"])?;
     let v: Value = serde_json::from_str(&out).context("networkctl JSON parse failed")?;
     Ok(v["Interfaces"].as_array().cloned().unwrap_or_default())
 }
 
 fn query_nm() -> Vec<Value> {
-    let out = match run_cmd(&[
+    let out = match capture_cmd(&[
         "nmcli",
         "-t",
         "-f",
@@ -386,35 +528,43 @@ fn query_nm() -> Vec<Value> {
 fn query_routes() -> (Vec<Value>, Vec<Value>) {
     let mut r4 = vec![];
     let mut r6 = vec![];
-    if let Ok(o) = run_cmd(&["ip", "-d", "-j", "-4", "route", "show", "table", "all"]) {
-        if let Ok(v) = serde_json::from_str::<Value>(&o) {
-            if let Some(arr) = v.as_array() {
-                r4 = arr
-                    .iter()
-                    .map(|x| {
-                        let mut v = x.clone();
-                        v.as_object_mut()
-                            .map(|m| m.insert("family".into(), Value::Number(2.into())));
-                        v
-                    })
-                    .collect();
+    match capture_cmd(&["ip", "-d", "-j", "-4", "route", "show", "table", "all"]) {
+        Ok(o) => match serde_json::from_str::<Value>(&o) {
+            Ok(v) => {
+                if let Some(arr) = v.as_array() {
+                    r4 = arr
+                        .iter()
+                        .map(|x| {
+                            let mut v = x.clone();
+                            v.as_object_mut()
+                                .map(|m| m.insert("family".into(), Value::Number(2.into())));
+                            v
+                        })
+                        .collect();
+                }
             }
-        }
+            Err(e) => log::warn!("failed to parse 'ip -4 route' output: {e}"),
+        },
+        Err(e) => log::warn!("failed to query IPv4 routes: {e}"),
     }
-    if let Ok(o) = run_cmd(&["ip", "-d", "-j", "-6", "route", "show", "table", "all"]) {
-        if let Ok(v) = serde_json::from_str::<Value>(&o) {
-            if let Some(arr) = v.as_array() {
-                r6 = arr
-                    .iter()
-                    .map(|x| {
-                        let mut v = x.clone();
-                        v.as_object_mut()
-                            .map(|m| m.insert("family".into(), Value::Number(10.into())));
-                        v
-                    })
-                    .collect();
+    match capture_cmd(&["ip", "-d", "-j", "-6", "route", "show", "table", "all"]) {
+        Ok(o) => match serde_json::from_str::<Value>(&o) {
+            Ok(v) => {
+                if let Some(arr) = v.as_array() {
+                    r6 = arr
+                        .iter()
+                        .map(|x| {
+                            let mut v = x.clone();
+                            v.as_object_mut()
+                                .map(|m| m.insert("family".into(), Value::Number(10.into())));
+                            v
+                        })
+                        .collect();
+                }
             }
-        }
+            Err(e) => log::warn!("failed to parse 'ip -6 route' output: {e}"),
+        },
+        Err(e) => log::warn!("failed to query IPv6 routes: {e}"),
     }
     (r4, r6)
 }
@@ -425,7 +575,7 @@ fn query_resolved() -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, String)>) {
         Some(b) => b,
         None => return (vec![], vec![]),
     };
-    let out = match run_cmd(&[
+    let out = match capture_cmd(&[
         &busctl,
         "--json=short",
         "call",
@@ -509,7 +659,7 @@ fn parse_resolved_json(json_str: &str) -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, S
 }
 
 fn query_nm_ssid(con_name: &str) -> Option<String> {
-    let out = run_cmd(&[
+    let out = capture_cmd(&[
         "nmcli",
         "--get-values",
         "802-11-wireless.ssid",
@@ -528,11 +678,11 @@ fn query_nm_ssid(con_name: &str) -> Option<String> {
 }
 
 fn query_networkctl_text(ifname: &str) -> String {
-    run_cmd(&["networkctl", "status", "--", ifname]).unwrap_or_default()
+    capture_cmd(&["networkctl", "status", "--", ifname]).unwrap_or_default()
 }
 
 fn query_members(ifname: &str) -> Vec<String> {
-    let out = match run_cmd(&["ip", "-d", "-j", "link", "show", "master", ifname]) {
+    let out = match capture_cmd(&["ip", "-d", "-j", "link", "show", "master", ifname]) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -1024,20 +1174,22 @@ fn query_online_state(ifaces: &[&IfaceData]) -> bool {
 
 // ── JSON serializer (Python-compatible) ───────────────────────────────────────
 
+/// Escape a string for embedding in JSON output, matching the subset of
+/// escapes produced by Python's `json.dumps` for ASCII control characters.
+fn escape_json_string(s: &str) -> String {
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
+}
+
 fn python_json_dumps(v: &Value) -> String {
     match v {
         Value::Null => "null".to_string(),
         Value::Bool(b) => if *b { "true" } else { "false" }.to_string(),
         Value::Number(n) => n.to_string(),
-        Value::String(s) => {
-            let escaped = s
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\n', "\\n")
-                .replace('\r', "\\r")
-                .replace('\t', "\\t");
-            format!("\"{}\"", escaped)
-        }
+        Value::String(s) => format!("\"{}\"", escape_json_string(s)),
         Value::Array(arr) => {
             let items: Vec<String> = arr.iter().map(python_json_dumps).collect();
             format!("[{}]", items.join(", "))
@@ -1045,7 +1197,7 @@ fn python_json_dumps(v: &Value) -> String {
         Value::Object(map) => {
             let items: Vec<String> = map
                 .iter()
-                .map(|(k, v)| format!("\"{}\": {}", k, python_json_dumps(v)))
+                .map(|(k, v)| format!("\"{}\": {}", escape_json_string(k), python_json_dumps(v)))
                 .collect();
             format!("{{{}}}", items.join(", "))
         }
@@ -1055,10 +1207,11 @@ fn python_json_dumps(v: &Value) -> String {
 // ── YAML serializer (Python yaml.dump-compatible: sorted keys, null/false) ────
 
 fn to_yaml(v: &Value, indent: usize) -> String {
+    use std::fmt::Write as _;
     match v {
         Value::Null => "null\n".to_string(),
         Value::Bool(b) => format!("{}\n", if *b { "true" } else { "false" }),
-        Value::Number(n) => format!("{}\n", n),
+        Value::Number(n) => format!("{n}\n"),
         Value::String(s) => format!("{}\n", yaml_scalar(s)),
         Value::Array(arr) => {
             if arr.is_empty() {
@@ -1068,8 +1221,8 @@ fn to_yaml(v: &Value, indent: usize) -> String {
             let mut out = "\n".to_string();
             for item in arr {
                 let rendered = to_yaml(item, indent + 2);
-                let trimmed = rendered.trim_end_matches('\n');
-                out.push_str(&format!("{}- {}\n", pad, trimmed.trim_start()));
+                let trimmed = rendered.trim_end_matches('\n').trim_start();
+                writeln!(out, "{pad}- {trimmed}").unwrap();
             }
             out
         }
@@ -1086,9 +1239,9 @@ fn to_yaml(v: &Value, indent: usize) -> String {
                 let rendered = to_yaml(val, indent + 2);
                 if rendered.starts_with('\n') {
                     // nested block
-                    out.push_str(&format!("{}{}:{}", pad, key, rendered));
+                    write!(out, "{pad}{key}:{rendered}").unwrap();
                 } else {
-                    out.push_str(&format!("{}{}: {}", pad, key, rendered));
+                    write!(out, "{pad}{key}: {rendered}").unwrap();
                 }
             }
             out
@@ -1127,6 +1280,7 @@ fn yaml_scalar(s: &str) -> String {
 }
 
 fn render_yaml(data: &Map<String, Value>) -> String {
+    use std::fmt::Write as _;
     let mut keys: Vec<&str> = data.keys().map(String::as_str).collect();
     keys.sort_unstable();
     let mut out = String::new();
@@ -1134,9 +1288,9 @@ fn render_yaml(data: &Map<String, Value>) -> String {
         let val = &data[key];
         let rendered = to_yaml(val, 2);
         if rendered.starts_with('\n') {
-            out.push_str(&format!("{}:{}", key, rendered));
+            write!(out, "{key}:{rendered}").unwrap();
         } else {
-            out.push_str(&format!("{}: {}", key, rendered));
+            write!(out, "{key}: {rendered}").unwrap();
         }
     }
     out
@@ -1147,7 +1301,7 @@ fn render_yaml(data: &Map<String, Value>) -> String {
 const PAD: usize = 18;
 
 fn pline(title: &str, value: &str) {
-    println!("{:>pad$} {}", title, value, pad = PAD);
+    println!("{title:>PAD$} {value}");
 }
 
 fn pretty_print(
@@ -2650,7 +2804,7 @@ fn sign_minus(on: bool) -> String {
 
 // sign is already a rendered string (possibly ANSI-colored)
 fn plined(sign: &str, title: &str, value: &str) {
-    println!("{} {:>pad$} {}", sign, title, value, pad = PAD_DIFF);
+    println!("{sign} {title:>PAD_DIFF$} {value}");
 }
 
 fn format_route_str_diff(dr: &DiffRoute, verbose: bool) -> String {
@@ -3376,122 +3530,4 @@ fn dr_to_json(dr: &DiffRoute) -> Value {
     }
     m.insert("family".into(), Value::Number(dr.family.into()));
     Value::Object(m)
-}
-
-// ── Entry point ───────────────────────────────────────────────────────────────
-
-pub fn run(args: StatusArgs) -> Result<()> {
-    // --diff-only implies --diff, both need all interfaces
-    let show_all = args.all || args.diff || args.diff_only;
-
-    // Gather system data
-    let iproute2 = query_iproute2().context("Cannot query iproute2")?;
-    let networkd = query_networkd().context("Cannot query systemd-networkd")?;
-    if iproute2.is_empty() || networkd.is_empty() {
-        eprintln!("Could not query iproute2 or systemd-networkd");
-        std::process::exit(1);
-    }
-
-    let nm_data = query_nm();
-    let (routes4, routes6) = query_routes();
-    let (dns_addresses, dns_search) = query_resolved();
-
-    // Build interface list
-    let mut ifaces: Vec<IfaceData> = iproute2
-        .iter()
-        .map(|ip| {
-            build_iface(
-                ip,
-                &networkd,
-                &nm_data,
-                &dns_addresses,
-                &dns_search,
-                &routes4,
-                &routes6,
-            )
-        })
-        .collect();
-
-    correlate_members_and_uplinks(&mut ifaces);
-
-    // Filter for online state: non-DOWN interfaces
-    let active: Vec<&IfaceData> = ifaces.iter().filter(|i| i.operstate != "DOWN").collect();
-    let online = query_online_state(&active);
-
-    let total = ifaces.len();
-
-    // Apply interface name filter
-    if let Some(ifname) = &args.ifname {
-        if !ifaces.iter().any(|i| i.name == *ifname) {
-            eprintln!("Could not find interface {}", ifname);
-            std::process::exit(1);
-        }
-    }
-
-    // Build state map (insertion order via serde_json preserve_order)
-    let mut state: Map<String, Value> = Map::new();
-
-    let mut global = Map::new();
-    global.insert("online".into(), Value::Bool(online));
-    global.insert(
-        "nameservers".into(),
-        Value::Object(resolvconf_json(&args.root_dir)),
-    );
-    state.insert("netplan-global-state".into(), Value::Object(global));
-
-    let iter: Box<dyn Iterator<Item = &IfaceData>> = if show_all {
-        Box::new(ifaces.iter())
-    } else if let Some(target) = &args.ifname {
-        // When a specific interface is requested: include it even if DOWN
-        let target = target.clone();
-        Box::new(ifaces.iter().filter(move |i| i.name == target))
-    } else {
-        Box::new(ifaces.iter().filter(|i| i.operstate != "DOWN"))
-    };
-
-    for iface in iter {
-        state.insert(iface.name.clone(), Value::Object(iface.to_json_obj()));
-    }
-
-    let format = args.format.to_lowercase();
-
-    if args.diff || args.diff_only {
-        let netplan_ifaces = load_netplan_ifaces(&args.root_dir);
-        let report = compute_diff(&state, &netplan_ifaces, args.ifname.as_deref());
-
-        match format.as_str() {
-            "json" => {
-                println!("{}", python_json_dumps(&diff_to_json(&report)));
-            }
-            "yaml" => {
-                let json_val = diff_to_json(&report);
-                if let Value::Object(m) = json_val {
-                    print!("{}", render_yaml(&m));
-                }
-            }
-            _ => {
-                pretty_print_diff(
-                    &state,
-                    &report,
-                    args.verbose,
-                    args.diff_only,
-                    args.ifname.as_deref(),
-                );
-            }
-        }
-    } else {
-        match format.as_str() {
-            "json" => {
-                println!("{}", python_json_dumps(&Value::Object(state)));
-            }
-            "yaml" => {
-                print!("{}", render_yaml(&state));
-            }
-            _ => {
-                pretty_print(&state, total, args.ifname.as_deref(), args.verbose);
-            }
-        }
-    }
-
-    Ok(())
 }
