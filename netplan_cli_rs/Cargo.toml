@@ -10,10 +10,9 @@ name = "netplan"
 path = "src/main.rs"
 
 [dependencies]
-clap        = { version = "4", features = ["derive"] }
-anyhow      = "1"
-serde_json  = { version = "1", features = ["preserve_order"] }
-serde_yaml  = "0.9"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [profile.release]
 strip = true

@@ -78,9 +78,7 @@ impl Parser {
     pub fn load_yaml_hierarchy(&mut self, rootdir: &str) -> Result<()> {
         let c = CString::new(rootdir)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
-        let ok = unsafe {
-            ffi::netplan_parser_load_yaml_hierarchy(self.0, c.as_ptr(), &mut err)
-        };
+        let ok = unsafe { ffi::netplan_parser_load_yaml_hierarchy(self.0, c.as_ptr(), &mut err) };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
         }
@@ -91,8 +89,7 @@ impl Parser {
     pub fn load_yaml_file(&mut self, path: &str) -> Result<()> {
         let c = CString::new(path)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
-        let ok =
-            unsafe { ffi::netplan_parser_load_yaml(self.0, c.as_ptr(), &mut err) };
+        let ok = unsafe { ffi::netplan_parser_load_yaml(self.0, c.as_ptr(), &mut err) };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
         }
@@ -114,8 +111,7 @@ impl Parser {
     /// Seek `fd` to position 0 before calling.
     pub fn load_nullable_fields(&mut self, fd: RawFd) -> Result<()> {
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
-        let ok =
-            unsafe { ffi::netplan_parser_load_nullable_fields(self.0, fd, &mut err) };
+        let ok = unsafe { ffi::netplan_parser_load_nullable_fields(self.0, fd, &mut err) };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
         }
@@ -128,12 +124,7 @@ impl Parser {
         let c = CString::new(filename)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
         let ok = unsafe {
-            ffi::netplan_parser_load_nullable_overrides(
-                self.0,
-                fd,
-                c.as_ptr(),
-                &mut err,
-            )
+            ffi::netplan_parser_load_nullable_overrides(self.0, fd, c.as_ptr(), &mut err)
         };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
@@ -165,9 +156,8 @@ impl State {
     /// Validate the parser contents and transfer ownership into this state.
     pub fn import_parser_results(&mut self, parser: &mut Parser) -> Result<()> {
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
-        let ok = unsafe {
-            ffi::netplan_state_import_parser_results(self.0, parser.as_ptr(), &mut err)
-        };
+        let ok =
+            unsafe { ffi::netplan_state_import_parser_results(self.0, parser.as_ptr(), &mut err) };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
         }
@@ -195,12 +185,7 @@ impl State {
         let cr = CString::new(rootdir)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
         let ok = unsafe {
-            ffi::netplan_state_write_yaml_file(
-                self.0,
-                cf.as_ptr(),
-                cr.as_ptr(),
-                &mut err,
-            )
+            ffi::netplan_state_write_yaml_file(self.0, cf.as_ptr(), cr.as_ptr(), &mut err)
         };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
@@ -215,12 +200,7 @@ impl State {
         let cr = CString::new(rootdir)?;
         let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
         let ok = unsafe {
-            ffi::netplan_state_update_yaml_hierarchy(
-                self.0,
-                cf.as_ptr(),
-                cr.as_ptr(),
-                &mut err,
-            )
+            ffi::netplan_state_update_yaml_hierarchy(self.0, cf.as_ptr(), cr.as_ptr(), &mut err)
         };
         if ok == 0 {
             bail!("{}", unsafe { drain_error(err) });
@@ -263,7 +243,11 @@ impl Iterator for NetDefIter {
             return None;
         }
         let ptr = unsafe { ffi::netplan_state_iterator_next(&mut self.iter) };
-        if ptr.is_null() { None } else { Some(NetDef(ptr)) }
+        if ptr.is_null() {
+            None
+        } else {
+            Some(NetDef(ptr))
+        }
     }
 }
 
@@ -307,9 +291,7 @@ impl NetDef {
 
     /// The Netplan ID string (equals interface name for virtual interfaces).
     pub fn id(&self) -> String {
-        read_string_buf(|buf, len| unsafe {
-            ffi::netplan_netdef_get_id(self.0, buf, len)
-        })
+        read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(self.0, buf, len) })
     }
 
     /// The `set-name` value, or `None` if not configured.
@@ -317,7 +299,11 @@ impl NetDef {
         let s = read_string_buf(|buf, len| unsafe {
             ffi::netplan_netdef_get_set_name(self.0, buf, len)
         });
-        if s.is_empty() { None } else { Some(s) }
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
     }
 
     /// `true` if the netdef contains a `match:` stanza.
@@ -332,9 +318,9 @@ impl NetDef {
     pub fn backend_name(&self) -> &'static str {
         match self.backend() {
             ffi::NETPLAN_BACKEND_NETWORKD => "networkd",
-            ffi::NETPLAN_BACKEND_NM       => "NetworkManager",
-            ffi::NETPLAN_BACKEND_OVS      => "openvswitch",
-            _                             => "none",
+            ffi::NETPLAN_BACKEND_NM => "NetworkManager",
+            ffi::NETPLAN_BACKEND_OVS => "openvswitch",
+            _ => "none",
         }
     }
 
@@ -367,61 +353,72 @@ impl NetDef {
         let s = read_string_buf(|buf, len| unsafe {
             ffi::netplan_netdef_get_macaddress(self.0, buf, len)
         });
-        if s.is_empty() { None } else { Some(s) }
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
     }
 
     pub fn bridge_link_id(&self) -> Option<String> {
         let ptr = unsafe { ffi::netplan_netdef_get_bridge_link(self.0) };
-        if ptr.is_null() { return None; }
-        let id = read_string_buf(|buf, len| unsafe {
-            ffi::netplan_netdef_get_id(ptr, buf, len)
-        });
-        if id.is_empty() { None } else { Some(id) }
+        if ptr.is_null() {
+            return None;
+        }
+        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
+        if id.is_empty() {
+            None
+        } else {
+            Some(id)
+        }
     }
 
     pub fn bond_link_id(&self) -> Option<String> {
         let ptr = unsafe { ffi::netplan_netdef_get_bond_link(self.0) };
-        if ptr.is_null() { return None; }
-        let id = read_string_buf(|buf, len| unsafe {
-            ffi::netplan_netdef_get_id(ptr, buf, len)
-        });
-        if id.is_empty() { None } else { Some(id) }
+        if ptr.is_null() {
+            return None;
+        }
+        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
+        if id.is_empty() {
+            None
+        } else {
+            Some(id)
+        }
     }
 
     pub fn vrf_link_id(&self) -> Option<String> {
         let ptr = unsafe { ffi::netplan_netdef_get_vrf_link(self.0) };
-        if ptr.is_null() { return None; }
-        let id = read_string_buf(|buf, len| unsafe {
-            ffi::netplan_netdef_get_id(ptr, buf, len)
-        });
-        if id.is_empty() { None } else { Some(id) }
+        if ptr.is_null() {
+            return None;
+        }
+        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
+        if id.is_empty() {
+            None
+        } else {
+            Some(id)
+        }
     }
 
     #[allow(dead_code)]
     pub fn type_str(&self) -> &'static str {
         match self.def_type() {
             ffi::NETPLAN_DEF_TYPE_ETHERNET => "ethernet",
-            ffi::NETPLAN_DEF_TYPE_WIFI     => "wifi",
-            ffi::NETPLAN_DEF_TYPE_MODEM    => "modem",
-            ffi::NETPLAN_DEF_TYPE_BRIDGE   => "bridge",
-            ffi::NETPLAN_DEF_TYPE_BOND     => "bond",
-            ffi::NETPLAN_DEF_TYPE_VLAN     => "vlan",
-            ffi::NETPLAN_DEF_TYPE_TUNNEL   => "tunnel",
-            ffi::NETPLAN_DEF_TYPE_VRF      => "vrf",
-            ffi::NETPLAN_DEF_TYPE_DUMMY    => "dummy-device",
-            ffi::NETPLAN_DEF_TYPE_VETH     => "virtual-ethernet",
-            _                              => "other",
+            ffi::NETPLAN_DEF_TYPE_WIFI => "wifi",
+            ffi::NETPLAN_DEF_TYPE_MODEM => "modem",
+            ffi::NETPLAN_DEF_TYPE_BRIDGE => "bridge",
+            ffi::NETPLAN_DEF_TYPE_BOND => "bond",
+            ffi::NETPLAN_DEF_TYPE_VLAN => "vlan",
+            ffi::NETPLAN_DEF_TYPE_TUNNEL => "tunnel",
+            ffi::NETPLAN_DEF_TYPE_VRF => "vrf",
+            ffi::NETPLAN_DEF_TYPE_DUMMY => "dummy-device",
+            ffi::NETPLAN_DEF_TYPE_VETH => "virtual-ethernet",
+            _ => "other",
         }
     }
 
     /// Returns `true` if `name`/`mac`/`driver` all satisfy this netdef's
     /// match rules.  `None` arguments are passed as NULL (wildcard).
-    pub fn matches_interface(
-        &self,
-        name: &str,
-        mac: Option<&str>,
-        driver: Option<&str>,
-    ) -> bool {
+    pub fn matches_interface(&self, name: &str, mac: Option<&str>, driver: Option<&str>) -> bool {
         let cn = CString::new(name).unwrap_or_default();
         let cm = mac.and_then(|m| CString::new(m).ok());
         let cd = driver.and_then(|d| CString::new(d).ok());
@@ -489,10 +486,7 @@ pub fn dump_yaml_subtree(prefix_path: &[String], full_yaml: &str) -> Result<Stri
 ///
 /// * `obj_path` – path components, e.g. `["network", "ethernets", "eth0"]`
 /// * `payload`  – YAML value, e.g. `"{dhcp4: true}"` or `"NULL"`
-pub fn create_yaml_patch(
-    obj_path: &[String],
-    payload: &str,
-) -> Result<std::fs::File> {
+pub fn create_yaml_patch(obj_path: &[String], payload: &str) -> Result<std::fs::File> {
     let tab_path = obj_path.join("\t");
     let c_path = CString::new(tab_path)?;
     let c_payload = CString::new(payload)?;
@@ -502,12 +496,7 @@ pub fn create_yaml_patch(
 
     let mut err: *mut ffi::NetplanError = std::ptr::null_mut();
     let ok = unsafe {
-        ffi::netplan_util_create_yaml_patch(
-            c_path.as_ptr(),
-            c_payload.as_ptr(),
-            fd,
-            &mut err,
-        )
+        ffi::netplan_util_create_yaml_patch(c_path.as_ptr(), c_payload.as_ptr(), fd, &mut err)
     };
     if ok == 0 {
         bail!("{}", unsafe { drain_error(err) });

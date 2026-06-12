@@ -56,7 +56,9 @@ pub fn run(args: GenerateArgs) -> Result<()> {
         let busctl = which("busctl")?;
         let rc = Command::new(&busctl)
             .args([
-                "call", "--quiet", "--system",
+                "call",
+                "--quiet",
+                "--system",
                 "io.netplan.Netplan",
                 "/io/netplan/Netplan",
                 "io.netplan.Netplan",
@@ -100,8 +102,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
     if let Some(ref rd) = args.root_dir {
         // ── Testing / root-dir path: invoke generator binary directly ─────────
-        let sd_gen = Path::new(rd)
-            .join("usr/lib/systemd/system-generators/netplan");
+        let sd_gen = Path::new(rd).join("usr/lib/systemd/system-generators/netplan");
         let gen_dir = Path::new(rd).join("run/systemd/generator");
         let gen_early = Path::new(rd).join("run/systemd/generator.early");
         let gen_late = Path::new(rd).join("run/systemd/generator.late");
@@ -128,7 +129,8 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
         let rc = Command::new(&sd_gen)
             .args([
-                "--root-dir", rd,
+                "--root-dir",
+                rd,
                 gen_dir.to_str().unwrap_or(""),
                 gen_early.to_str().unwrap_or(""),
                 gen_late.to_str().unwrap_or(""),

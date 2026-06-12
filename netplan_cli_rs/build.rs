@@ -111,13 +111,22 @@ fn candidate_dirs(manifest_dir: &PathBuf) -> Vec<PathBuf> {
 
     // Meson / cmake build trees inside the parent repo directory.
     if let Some(repo_root) = manifest_dir.parent() {
-        for bd_name in &["build", "builddir", "_build", ".build", "out", "obj",
-                         "debug", "release"] {
+        for bd_name in &[
+            "build", "builddir", "_build", ".build", "out", "obj", "debug", "release",
+        ] {
             let bd = repo_root.join(bd_name);
-            if !bd.is_dir() { continue; }
+            if !bd.is_dir() {
+                continue;
+            }
             for sub in &["src", "lib", ""] {
-                let dir = if sub.is_empty() { bd.clone() } else { bd.join(sub) };
-                if dir.is_dir() { dirs.push(dir); }
+                let dir = if sub.is_empty() {
+                    bd.clone()
+                } else {
+                    bd.join(sub)
+                };
+                if dir.is_dir() {
+                    dirs.push(dir);
+                }
             }
         }
     }
@@ -139,11 +148,15 @@ fn candidate_dirs(manifest_dir: &PathBuf) -> Vec<PathBuf> {
 /// Return the path to any `libnetplan.so*` file in `dir`, preferring the
 /// unversioned name.  Returns `None` if no such file exists.
 fn find_libnetplan_file(dir: &PathBuf) -> Option<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return None };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return None;
+    };
     let mut versioned: Option<PathBuf> = None;
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !name.starts_with("libnetplan.so") { continue; }
+        if !name.starts_with("libnetplan.so") {
+            continue;
+        }
         let path = entry.path();
         if name == "libnetplan.so" {
             return Some(path); // exact match — no need to look further
@@ -167,7 +180,11 @@ fn pkg_config_libdir(name: &str) -> Option<String> {
     }
     let path = String::from_utf8(out.stdout).ok()?;
     let path = path.trim().to_string();
-    if path.is_empty() { None } else { Some(path) }
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
 }
 
 /// Parse `src/*.{h,c}` (excluding `_`-prefixed files) for lines containing
@@ -185,8 +202,7 @@ fn extract_features(src_dir: &std::path::Path) -> Vec<String> {
         .map(|e| e.path())
         .filter(|p| {
             let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            !name.starts_with('_')
-                && (name.ends_with(".h") || name.ends_with(".c"))
+            !name.starts_with('_') && (name.ends_with(".h") || name.ends_with(".c"))
         })
         .collect();
     // Sort for deterministic output

@@ -8,17 +8,14 @@ mod commands;
 mod ffi;
 mod netplan;
 mod utils;
+mod yaml;
 
 use commands::{apply, generate, get, info, ip, migrate, set, status, try_command};
 
 // ── CLI skeleton ──────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(
-    name = "netplan",
-    about = "Network configuration in YAML",
-    version
-)]
+#[command(name = "netplan", about = "Network configuration in YAML", version)]
 struct Cli {
     /// Enable verbose debug output
     #[arg(long, global = true)]
@@ -77,7 +74,9 @@ fn main() {
 
     let mut raw_args: Vec<String> = std::env::args().collect();
 
-    const SUBCOMMANDS: &[&str] = &["apply", "generate", "get", "set", "info", "ip", "migrate", "status", "try"];
+    const SUBCOMMANDS: &[&str] = &[
+        "apply", "generate", "get", "set", "info", "ip", "migrate", "status", "try",
+    ];
 
     // First non-option argument (if any).
     let first_positional = raw_args.iter().skip(1).find(|a| !a.starts_with('-'));
@@ -87,8 +86,10 @@ fn main() {
         .unwrap_or(false);
 
     // Is this a systemd-generator / test-framework invocation?
-    let has_root_dir   = raw_args.iter().skip(1).any(|a| a == "--root-dir");
-    let first_is_path  = first_positional.map(|a| a.starts_with('/')).unwrap_or(false);
+    let has_root_dir = raw_args.iter().skip(1).any(|a| a == "--root-dir");
+    let first_is_path = first_positional
+        .map(|a| a.starts_with('/'))
+        .unwrap_or(false);
     let generator_mode = (has_root_dir || first_is_path) && !has_known_subcommand;
 
     if generator_mode {
@@ -122,15 +123,15 @@ fn main() {
     }
 
     let result: Result<()> = match cli.command {
-        Command::Apply(args)    => apply::run(args),
+        Command::Apply(args) => apply::run(args),
         Command::Generate(args) => generate::run(args),
-        Command::Get(args)      => get::run(args),
-        Command::Ip(args)       => ip::run(args),
-        Command::Migrate(args)  => migrate::run(args),
-        Command::Set(args)      => set::run(args),
-        Command::Status(args)   => status::run(args),
-        Command::Info(args)     => info::run(args),
-        Command::Try(args)      => try_command::run(args),
+        Command::Get(args) => get::run(args),
+        Command::Ip(args) => ip::run(args),
+        Command::Migrate(args) => migrate::run(args),
+        Command::Set(args) => set::run(args),
+        Command::Status(args) => status::run(args),
+        Command::Info(args) => info::run(args),
+        Command::Try(args) => try_command::run(args),
     };
 
     if let Err(e) = result {

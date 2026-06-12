@@ -38,10 +38,7 @@ pub fn run(args: SetArgs) -> Result<()> {
         }
     }
 
-    let filename: Option<String> = args
-        .origin_hint
-        .as_deref()
-        .map(|h| format!("{}.yaml", h));
+    let filename: Option<String> = args.origin_hint.as_deref().map(|h| format!("{}.yaml", h));
 
     // Split "key=value" on the first '='
     let (key_raw, value) = args
@@ -61,8 +58,8 @@ pub fn run(args: SetArgs) -> Result<()> {
 
     // ── Build the YAML patch ──────────────────────────────────────────────────
     // Returns a seekable memfd containing the patch document.
-    let mut patch_file = netplan::create_yaml_patch(&yaml_path, value)
-        .context("Failed to create YAML patch")?;
+    let mut patch_file =
+        netplan::create_yaml_patch(&yaml_path, value).context("Failed to create YAML patch")?;
 
     // ── First parser: validate the full intended configuration ────────────────
     {

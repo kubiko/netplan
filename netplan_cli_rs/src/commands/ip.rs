@@ -9,7 +9,6 @@ use std::process::Command;
 use anyhow::{bail, Context, Result};
 use clap::{Args, Subcommand};
 
-
 // ── Argument types ────────────────────────────────────────────────────────────
 
 #[derive(Args, Debug)]
@@ -58,7 +57,10 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
     let state = match crate::netplan::load_state(root_dir) {
         Ok(s) => s,
         Err(_) => {
-            eprintln!("No lease found for interface '{}' (not managed by Netplan)", iface);
+            eprintln!(
+                "No lease found for interface '{}' (not managed by Netplan)",
+                iface
+            );
             std::process::exit(1);
         }
     };
@@ -73,7 +75,10 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
         .collect();
 
     if matches.len() != 1 {
-        eprintln!("No lease found for interface '{}' (not managed by Netplan)", iface);
+        eprintln!(
+            "No lease found for interface '{}' (not managed by Netplan)",
+            iface
+        );
         std::process::exit(1);
     }
 
@@ -147,8 +152,9 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
         .map(|(_, v)| v.trim().to_string())
         .filter(|s| !s.is_empty() && s != "--");
 
-    let conn_id = conn_id
-        .ok_or_else(|| anyhow::anyhow!("Could not find a NetworkManager connection for the interface"))?;
+    let conn_id = conn_id.ok_or_else(|| {
+        anyhow::anyhow!("Could not find a NetworkManager connection for the interface")
+    })?;
 
     // Step 2: get the connection UUID via `nmcli con show id <conn_id>`.
     let con_out = Command::new("nmcli")
@@ -190,6 +196,8 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
         return Ok(dhclient);
     }
 
-    bail!("no lease file found (tried internal and dhclient paths in {:?})", base)
+    bail!(
+        "no lease file found (tried internal and dhclient paths in {:?})",
+        base
+    )
 }
-

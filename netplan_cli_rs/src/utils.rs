@@ -26,7 +26,8 @@ pub fn get_configure_path() -> String {
         return configured;
     }
 
-    let parent = Path::new(&configured).parent()
+    let parent = Path::new(&configured)
+        .parent()
         .map(|p| p.join("build/src/configure").to_string_lossy().into_owned());
 
     let fallbacks = [
@@ -55,7 +56,8 @@ pub fn get_generator_path() -> String {
     // When the configured path doesn't exist (e.g. tests pointing at project
     // root before the C generator is installed there), try the meson build
     // tree and common system install locations as fallbacks.
-    let parent = Path::new(&configured).parent()
+    let parent = Path::new(&configured)
+        .parent()
         .map(|p| p.join("build/src/generate").to_string_lossy().into_owned());
 
     let fallbacks = [
@@ -216,14 +218,26 @@ pub fn nmcli(args: &[&str]) {
 
 pub fn nm_get_connection_for_interface(iface: &str) -> String {
     let out = Command::new("nmcli")
-        .args(["-m", "tabular", "-f", "GENERAL.CONNECTION", "device", "show", iface])
+        .args([
+            "-m",
+            "tabular",
+            "-f",
+            "GENERAL.CONNECTION",
+            "device",
+            "show",
+            iface,
+        ])
         .output()
         .ok();
     let Some(out) = out else { return String::new() };
     let text = String::from_utf8_lossy(&out.stdout);
     // Output is two lines: header then value
     let value = text.lines().nth(1).unwrap_or("").trim();
-    if value == "--" { String::new() } else { value.to_string() }
+    if value == "--" {
+        String::new()
+    } else {
+        value.to_string()
+    }
 }
 
 pub fn ip_addr_flush(iface: &str) {
@@ -332,10 +346,7 @@ pub fn fnmatch(pattern: &str, name: &str) -> bool {
 pub fn glob_paths(pattern: &str) -> Vec<String> {
     let path = Path::new(pattern);
     let dir = path.parent().unwrap_or(Path::new("/"));
-    let file_pat = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("*");
+    let file_pat = path.file_name().and_then(|n| n.to_str()).unwrap_or("*");
 
     let Ok(entries) = fs::read_dir(dir) else {
         return vec![];
