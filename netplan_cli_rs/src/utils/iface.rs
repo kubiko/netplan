@@ -35,11 +35,11 @@ pub fn driver(iface: &str) -> Option<String> {
 }
 
 /// Returns `(ifname, mac, driver)` tuples for all current interfaces.
-pub fn all() -> Vec<(String, String, Option<String>)> {
+pub fn all() -> Vec<(String, Option<String>, Option<String>)> {
     names()
         .into_iter()
         .map(|name| {
-            let m = mac(&name).unwrap_or_default();
+            let m = mac(&name);
             let d = driver(&name);
             (name, m, d)
         })
