@@ -16,7 +16,6 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use clap::Args;
 
-
 const DEFAULT_TIMEOUT: u64 = 120;
 
 // ── Signal constants (Linux) ──────────────────────────────────────────────────
@@ -46,8 +45,8 @@ struct Termios {
     c_oflag: u32,
     c_cflag: u32,
     c_lflag: u32,
-    c_line:  u8,
-    c_cc:    [u8; 32], // NCCS=32 in glibc; c_ispeed follows at 4-byte-aligned offset
+    c_line: u8,
+    c_cc: [u8; 32], // NCCS=32 in glibc; c_ispeed follows at 4-byte-aligned offset
     c_ispeed: u32,
     c_ospeed: u32,
 }
@@ -81,7 +80,10 @@ pub struct TryArgs {
 
 pub fn run(args: TryArgs) -> Result<()> {
     let rootdir = std::env::var("DBUS_TEST_NETPLAN_ROOT").unwrap_or_else(|_| "/".to_string());
-    let stamp = format!("{}run/netplan/netplan-try.ready", rootdir.trim_end_matches('/').to_string() + "/");
+    let stamp = format!(
+        "{}run/netplan/netplan-try.ready",
+        rootdir.trim_end_matches('/').to_string() + "/"
+    );
 
     // ── Validate config is parseable ──────────────────────────────────────────
     if let Err(e) = crate::netplan::load_state(&rootdir) {
@@ -173,7 +175,11 @@ fn wait_for_confirmation(timeout: u64) -> Outcome {
     });
 
     for remaining in (0..=timeout).rev() {
-        print!("Changes will revert in {:>width$} seconds\r", remaining, width = width);
+        print!(
+            "Changes will revert in {:>width$} seconds\r",
+            remaining,
+            width = width
+        );
         std::io::stdout().flush().ok();
 
         // Check for ENTER (wait up to 1 second)
@@ -212,7 +218,10 @@ fn revert(
     let state_dir = make_tempdir("netplan-revert-state-")?;
     let _state_cleanup = DirCleanup(&state_dir);
 
-    let etc_src = format!("{}etc/netplan", rootdir.trim_end_matches('/').to_string() + "/");
+    let etc_src = format!(
+        "{}etc/netplan",
+        rootdir.trim_end_matches('/').to_string() + "/"
+    );
     let etc_dst = format!("{}/etc/netplan", state_dir);
     std::fs::create_dir_all(&etc_dst)?;
     copy_tree(&etc_src, &etc_dst, true)?;
@@ -249,7 +258,10 @@ fn backup(rootdir: &str, include_etc: bool, backup_dir: &str) -> Result<()> {
     }
 
     let run_dirs = [
-        ("run/NetworkManager/system-connections", "run/NetworkManager/system-connections"),
+        (
+            "run/NetworkManager/system-connections",
+            "run/NetworkManager/system-connections",
+        ),
         ("run/systemd/network", "run/systemd/network"),
     ];
 
@@ -341,7 +353,11 @@ fn run_self(args: &[&str]) -> Result<()> {
         .with_context(|| format!("Failed to exec {:?}", exe))?;
     let rc = status.code().unwrap_or(1);
     if rc != 0 {
-        anyhow::bail!("'netplan {}' exited with code {}", args.first().unwrap_or(&"?"), rc);
+        anyhow::bail!(
+            "'netplan {}' exited with code {}",
+            args.first().unwrap_or(&"?"),
+            rc
+        );
     }
     Ok(())
 }
@@ -382,7 +398,9 @@ fn copy_tree(src: &str, dst: &str, missing_ok: bool) -> Result<()> {
 /// Minimal recursive directory walker returning (path, metadata) pairs.
 fn walkdir(dir: &Path) -> Vec<(std::path::PathBuf, std::fs::Metadata)> {
     let mut result = Vec::new();
-    let Ok(entries) = std::fs::read_dir(dir) else { return result };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return result;
+    };
     for entry in entries.flatten() {
         let Ok(meta) = entry.metadata() else { continue };
         result.push((entry.path(), meta.clone()));
@@ -434,8 +452,14 @@ impl TermState {
     fn save(fd: c_int) -> Self {
         let is_tty = unsafe { isatty(fd) } != 0;
         let mut orig = Termios {
-            c_iflag: 0, c_oflag: 0, c_cflag: 0, c_lflag: 0,
-            c_line: 0, c_cc: [0; 32], c_ispeed: 0, c_ospeed: 0,
+            c_iflag: 0,
+            c_oflag: 0,
+            c_cflag: 0,
+            c_lflag: 0,
+            c_line: 0,
+            c_cc: [0; 32],
+            c_ispeed: 0,
+            c_ospeed: 0,
         };
         if is_tty {
             unsafe { tcgetattr(fd, &mut orig) };
@@ -467,7 +491,7 @@ impl TermState {
 
 fn install_signals() {
     unsafe {
-        signal(SIGINT,  Some(signal_handler));
+        signal(SIGINT, Some(signal_handler));
         signal(SIGUSR1, Some(signal_handler));
         signal(SIGTERM, Some(signal_handler));
     }

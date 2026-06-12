@@ -160,8 +160,14 @@ pub fn run(args: MigrateArgs) -> Result<()> {
                         // inet6
                         let supported = ["address", "netmask", "gateway", "accept_ra"];
                         let unsupported = [
-                            "metric", "media", "autoconf", "privext", "scope",
-                            "preferred-lifetime", "dad-attempts", "dad-interval",
+                            "metric",
+                            "media",
+                            "autoconf",
+                            "privext",
+                            "scope",
+                            "preferred-lifetime",
+                            "dad-attempts",
+                            "dad-interval",
                         ];
                         check_options(&base_iface, family, &opts, &supported, &unsupported);
 
@@ -211,7 +217,10 @@ pub fn run(args: MigrateArgs) -> Result<()> {
                                 "0" => c.accept_ra = Some(false),
                                 "1" => c.accept_ra = Some(true),
                                 "2" => {
-                                    eprintln!("{}: netplan does not support accept_ra=2", base_iface);
+                                    eprintln!(
+                                        "{}: netplan does not support accept_ra=2",
+                                        base_iface
+                                    );
                                     std::process::exit(2);
                                 }
                                 other => {
@@ -324,9 +333,9 @@ fn parse_mtu(
     c: &mut IfNetplanConfig,
 ) -> Result<()> {
     if let Some(mtu_str) = opts.remove("mtu") {
-        let mtu: u32 = mtu_str.parse().map_err(|_| {
-            anyhow::anyhow!("{}: cannot parse \"{}\" as an MTU", iface, mtu_str)
-        })?;
+        let mtu: u32 = mtu_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("{}: cannot parse \"{}\" as an MTU", iface, mtu_str))?;
         if let Some(existing) = c.mtu {
             if existing != mtu {
                 bail!(
@@ -403,7 +412,11 @@ fn parse_ipv4_network(spec: &str) -> Result<u8> {
 
     // Validate it's a contiguous mask: leading 1-bits then all 0-bits.
     let leading_ones = mask_bits.leading_ones();
-    let expected = if leading_ones == 32 { !0u32 } else { !0u32 << (32 - leading_ones) };
+    let expected = if leading_ones == 32 {
+        !0u32
+    } else {
+        !0u32 << (32 - leading_ones)
+    };
     if mask_bits != expected {
         bail!("Non-contiguous netmask: {}", mask_part);
     }
@@ -443,14 +456,30 @@ fn render_yaml(ethernets: &BTreeMap<String, IfNetplanConfig>) -> String {
 
         // Collect all keys that are set, sort them (to match Python's yaml.dump sorted output)
         let mut keys: Vec<&str> = Vec::new();
-        if c.accept_ra.is_some() { keys.push("accept_ra"); }
-        if !c.addresses.is_empty() { keys.push("addresses"); }
-        if c.dhcp4.is_some() { keys.push("dhcp4"); }
-        if c.dhcp6.is_some() { keys.push("dhcp6"); }
-        if c.gateway4.is_some() { keys.push("gateway4"); }
-        if c.gateway6.is_some() { keys.push("gateway6"); }
-        if c.macaddress.is_some() { keys.push("macaddress"); }
-        if c.mtu.is_some() { keys.push("mtu"); }
+        if c.accept_ra.is_some() {
+            keys.push("accept_ra");
+        }
+        if !c.addresses.is_empty() {
+            keys.push("addresses");
+        }
+        if c.dhcp4.is_some() {
+            keys.push("dhcp4");
+        }
+        if c.dhcp6.is_some() {
+            keys.push("dhcp6");
+        }
+        if c.gateway4.is_some() {
+            keys.push("gateway4");
+        }
+        if c.gateway6.is_some() {
+            keys.push("gateway6");
+        }
+        if c.macaddress.is_some() {
+            keys.push("macaddress");
+        }
+        if c.mtu.is_some() {
+            keys.push("mtu");
+        }
         if !c.nameservers_addresses.is_empty() || !c.nameservers_search.is_empty() {
             keys.push("nameservers");
         }
@@ -458,7 +487,10 @@ fn render_yaml(ethernets: &BTreeMap<String, IfNetplanConfig>) -> String {
         for key in keys {
             match key {
                 "accept_ra" => {
-                    out.push_str(&format!("      accept_ra: {}\n", yaml_bool(c.accept_ra.unwrap())));
+                    out.push_str(&format!(
+                        "      accept_ra: {}\n",
+                        yaml_bool(c.accept_ra.unwrap())
+                    ));
                 }
                 "addresses" => {
                     out.push_str("      addresses:\n");
@@ -473,13 +505,22 @@ fn render_yaml(ethernets: &BTreeMap<String, IfNetplanConfig>) -> String {
                     out.push_str(&format!("      dhcp6: {}\n", yaml_bool(c.dhcp6.unwrap())));
                 }
                 "gateway4" => {
-                    out.push_str(&format!("      gateway4: {}\n", c.gateway4.as_ref().unwrap()));
+                    out.push_str(&format!(
+                        "      gateway4: {}\n",
+                        c.gateway4.as_ref().unwrap()
+                    ));
                 }
                 "gateway6" => {
-                    out.push_str(&format!("      gateway6: {}\n", c.gateway6.as_ref().unwrap()));
+                    out.push_str(&format!(
+                        "      gateway6: {}\n",
+                        c.gateway6.as_ref().unwrap()
+                    ));
                 }
                 "macaddress" => {
-                    out.push_str(&format!("      macaddress: {}\n", c.macaddress.as_ref().unwrap()));
+                    out.push_str(&format!(
+                        "      macaddress: {}\n",
+                        c.macaddress.as_ref().unwrap()
+                    ));
                 }
                 "mtu" => {
                     out.push_str(&format!("      mtu: {}\n", c.mtu.unwrap()));
@@ -510,7 +551,11 @@ fn render_yaml(ethernets: &BTreeMap<String, IfNetplanConfig>) -> String {
 }
 
 fn yaml_bool(b: bool) -> &'static str {
-    if b { "true" } else { "false" }
+    if b {
+        "true"
+    } else {
+        "false"
+    }
 }
 
 // ── ifupdown parser ───────────────────────────────────────────────────────────
@@ -519,7 +564,10 @@ fn yaml_bool(b: bool) -> &'static str {
 /// Preserves insertion order via Vec.
 fn parse_ifupdown(
     rootdir: &str,
-) -> Result<(Vec<(String, Vec<(String, IfaceConfig)>)>, std::collections::HashSet<String>)> {
+) -> Result<(
+    Vec<(String, Vec<(String, IfaceConfig)>)>,
+    std::collections::HashSet<String>,
+)> {
     let lines = ifupdown_lines_from_file(rootdir, "/etc/network/interfaces");
 
     let mut ifaces: Vec<(String, Vec<(String, IfaceConfig)>)> = Vec::new();
@@ -528,13 +576,21 @@ fn parse_ifupdown(
     let mut in_family: Option<String> = None;
 
     let field_lens: HashMap<&str, usize> = [
-        ("auto", 1), ("allow-auto", 1), ("allow-hotplug", 1),
-        ("mapping", 1), ("no-scripts", 1), ("iface", 3),
-    ].into_iter().collect();
+        ("auto", 1),
+        ("allow-auto", 1),
+        ("allow-hotplug", 1),
+        ("mapping", 1),
+        ("no-scripts", 1),
+        ("iface", 3),
+    ]
+    .into_iter()
+    .collect();
 
     for line in &lines {
         let fields: Vec<&str> = line.split_whitespace().collect();
-        if fields.is_empty() { continue; }
+        if fields.is_empty() {
+            continue;
+        }
 
         if let Some(&exp_len) = field_lens.get(fields[0]) {
             in_iface = None;
@@ -570,11 +626,23 @@ fn parse_ifupdown(
 
                     // find or create iface entry
                     if let Some(entry) = ifaces.iter_mut().find(|(n, _)| n == &iface_name) {
-                        entry.1.push((family.clone(), IfaceConfig { method, options: HashMap::new() }));
+                        entry.1.push((
+                            family.clone(),
+                            IfaceConfig {
+                                method,
+                                options: HashMap::new(),
+                            },
+                        ));
                     } else {
                         ifaces.push((
                             iface_name.clone(),
-                            vec![(family.clone(), IfaceConfig { method, options: HashMap::new() })],
+                            vec![(
+                                family.clone(),
+                                IfaceConfig {
+                                    method,
+                                    options: HashMap::new(),
+                                },
+                            )],
                         ));
                     }
                     in_iface = Some(iface_name);
@@ -585,7 +653,12 @@ fn parse_ifupdown(
         } else {
             // Option line
             if let (Some(ref iface_name), Some(ref family)) = (&in_iface, &in_family) {
-                let val = line.splitn(2, char::is_whitespace).nth(1).unwrap_or("").trim().to_string();
+                let val = line
+                    .splitn(2, char::is_whitespace)
+                    .nth(1)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
                 if let Some(entry) = ifaces.iter_mut().find(|(n, _)| n == iface_name) {
                     if let Some((_, cfg)) = entry.1.iter_mut().find(|(f, _)| f == family) {
                         cfg.options.insert(fields[0].to_string(), val);
@@ -632,7 +705,8 @@ fn ifupdown_lines_from_file(rootdir: &str, path: &str) -> Vec<String> {
                     .filter_map(|e| e.ok())
                     .map(|e| e.file_name().to_string_lossy().into_owned())
                     .filter(|name| {
-                        name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+                        name.chars()
+                            .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
                     })
                     .collect();
                 names.sort();

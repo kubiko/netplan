@@ -46,7 +46,9 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         let busctl = which("busctl")?;
         let rc = Command::new(&busctl)
             .args([
-                "call", "--quiet", "--system",
+                "call",
+                "--quiet",
+                "--system",
                 "io.netplan.Netplan",
                 "/io/netplan/Netplan",
                 "io.netplan.Netplan",
@@ -65,14 +67,17 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         return Ok(());
     }
 
-    let ovs_cleanup_path = format!("{}{}", utils::GENERATOR_LATE_DIR, utils::OVS_CLEANUP_SERVICE);
+    let ovs_cleanup_path = format!(
+        "{}{}",
+        utils::GENERATOR_LATE_DIR,
+        utils::OVS_CLEANUP_SERVICE
+    );
 
     // ── Snapshot pre-generate state ───────────────────────────────────────────
     let old_files_networkd = !utils::glob_paths("/run/systemd/network/*netplan-*").is_empty();
 
-    let mut old_ovs_glob = utils::glob_paths(
-        &format!("{}netplan-ovs-*", utils::GENERATOR_LATE_DIR),
-    );
+    let mut old_ovs_glob =
+        utils::glob_paths(&format!("{}netplan-ovs-*", utils::GENERATOR_LATE_DIR));
     old_ovs_glob.retain(|p| p != &ovs_cleanup_path);
     let old_files_ovs = !old_ovs_glob.is_empty();
 
@@ -103,9 +108,8 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     let restart_networkd_new = !utils::glob_paths("/run/systemd/network/*netplan-*").is_empty();
     let mut restart_networkd = restart_networkd_new || old_files_networkd;
 
-    let mut restart_ovs_glob = utils::glob_paths(
-        &format!("{}netplan-ovs-*", utils::GENERATOR_LATE_DIR),
-    );
+    let mut restart_ovs_glob =
+        utils::glob_paths(&format!("{}netplan-ovs-*", utils::GENERATOR_LATE_DIR));
     restart_ovs_glob.retain(|p| p != &ovs_cleanup_path);
     let restart_ovs = !restart_ovs_glob.is_empty();
     if !restart_ovs && old_files_ovs {
@@ -211,21 +215,32 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         .status();
     // Returns 1 in containers (LP: #2095203) — ignore the error
     let _ = Command::new("udevadm")
-        .args(["trigger", "--action=move", "--subsystem-match=net", "--settle"])
+        .args([
+            "trigger",
+            "--action=move",
+            "--subsystem-match=net",
+            "--settle",
+        ])
         .status();
 
     // ── Regulatory domain ─────────────────────────────────────────────────────
-    if Path::new(&format!("{}netplan-regdom.service", utils::GENERATOR_LATE_DIR)).exists() {
+    if Path::new(&format!(
+        "{}netplan-regdom.service",
+        utils::GENERATOR_LATE_DIR
+    ))
+    .exists()
+    {
         utils::systemctl("start", &["netplan-regdom.service"], false);
     }
 
     // ── (Re)start networkd backend ────────────────────────────────────────────
     if restart_networkd {
         let netplan_wpa = glob_wants_services(utils::GENERATOR_LATE_DIR, "netplan-wpa-*.service");
-        let netplan_ovs: Vec<String> = glob_wants_services(utils::GENERATOR_LATE_DIR, "netplan-ovs-*.service")
-            .into_iter()
-            .filter(|name| name != utils::OVS_CLEANUP_SERVICE)
-            .collect();
+        let netplan_ovs: Vec<String> =
+            glob_wants_services(utils::GENERATOR_LATE_DIR, "netplan-ovs-*.service")
+                .into_iter()
+                .filter(|name| name != utils::OVS_CLEANUP_SERVICE)
+                .collect();
 
         // networkctl reload/reconfigure; fall back to hard restart if it fails
         if utils::networkctl_reload().is_err()
@@ -252,11 +267,10 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     // ── (Re)start NetworkManager backend ──────────────────────────────────────
     if restart_nm {
         // Use the refreshed (post-stop) device list for final NM interface detection
-        let nm_ifaces_final: Vec<String> =
-            utils::nm_interfaces(&restart_nm_glob, &device_names)
-                .into_iter()
-                .cloned()
-                .collect();
+        let nm_ifaces_final: Vec<String> = utils::nm_interfaces(&restart_nm_glob, &device_names)
+            .into_iter()
+            .cloned()
+            .collect();
 
         for iface in &nm_ifaces_final {
             utils::ip_addr_flush(iface);
@@ -268,8 +282,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         utils::systemctl_network_manager("start", false);
 
         // If 'lo' was managed by NM, wait for NM to be ready then bring it back
-        let nm_ifaces_set: HashSet<&str> =
-            nm_ifaces_final.iter().map(String::as_str).collect();
+        let nm_ifaces_set: HashSet<&str> = nm_ifaces_final.iter().map(String::as_str).collect();
 
         if nm_ifaces_set.contains("lo") {
             // Wait up to ~5 s for NM to report connected
@@ -352,7 +365,11 @@ fn find_matching_iface(
     let candidates: Vec<&String> = interfaces
         .iter()
         .filter(|(name, mac, driver)| {
-            let mac_opt = if mac.is_empty() { None } else { Some(mac.as_str()) };
+            let mac_opt = if mac.is_empty() {
+                None
+            } else {
+                Some(mac.as_str())
+            };
             netdef.matches_interface(name, mac_opt, driver.as_deref())
         })
         .map(|(name, _, _)| name)

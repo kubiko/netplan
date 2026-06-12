@@ -46,28 +46,28 @@ pub struct StatusArgs {
 
 fn device_type(nd_type: &str) -> Option<&'static str> {
     match nd_type {
-        "bond"               => Some("bond"),
-        "bridge"             => Some("bridge"),
-        "dummy"              => Some("dummy-device"),
-        "erspan"             => Some("tunnel"),
-        "ether"              => Some("ethernet"),
-        "gretap"             => Some("tunnel"),
-        "ipgre"              => Some("tunnel"),
-        "ip6gre"             => Some("tunnel"),
-        "loopback"           => Some("ethernet"),
-        "sit"                => Some("tunnel"),
-        "tunnel"             => Some("tunnel"),
-        "tun"                => Some("tunnel"),
-        "tunnel6"            => Some("tunnel"),
-        "wireguard"          => Some("tunnel"),
-        "wlan"               => Some("wifi"),
-        "wwan"               => Some("modem"),
-        "veth"               => Some("virtual-ethernet"),
-        "vlan"               => Some("vlan"),
-        "vrf"                => Some("vrf"),
+        "bond" => Some("bond"),
+        "bridge" => Some("bridge"),
+        "dummy" => Some("dummy-device"),
+        "erspan" => Some("tunnel"),
+        "ether" => Some("ethernet"),
+        "gretap" => Some("tunnel"),
+        "ipgre" => Some("tunnel"),
+        "ip6gre" => Some("tunnel"),
+        "loopback" => Some("ethernet"),
+        "sit" => Some("tunnel"),
+        "tunnel" => Some("tunnel"),
+        "tun" => Some("tunnel"),
+        "tunnel6" => Some("tunnel"),
+        "wireguard" => Some("tunnel"),
+        "wlan" => Some("wifi"),
+        "wwan" => Some("modem"),
+        "veth" => Some("virtual-ethernet"),
+        "vlan" => Some("vlan"),
+        "vrf" => Some("vrf"),
         "ieee80211_radiotap" => Some("wifi"),
-        "none"               => None,
-        _                    => None,
+        "none" => None,
+        _ => None,
     }
 }
 
@@ -179,7 +179,10 @@ impl IfaceData {
     }
 
     fn vendor(&self) -> Option<&str> {
-        self.nd_vendor.as_deref().map(|s| s.trim()).filter(|s| !s.is_empty())
+        self.nd_vendor
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
     }
 
     fn ssid(&self) -> Option<String> {
@@ -195,10 +198,7 @@ impl IfaceData {
         for line in self.networkctl_text.lines() {
             let line = line.trim();
             // Match "WiFi access point:" or "Wi-Fi access point:"
-            let key_variants = [
-                "WiFi access point: ",
-                "Wi-Fi access point: ",
-            ];
+            let key_variants = ["WiFi access point: ", "Wi-Fi access point: "];
             for key in &key_variants {
                 if let Some(rest) = line.strip_prefix(key) {
                     // strip trailing " (mac)" part
@@ -223,7 +223,11 @@ impl IfaceData {
                     let line = line.trim();
                     if let Some(rest) = line.strip_prefix("Activation Policy: ") {
                         let mode = rest.trim();
-                        return if mode == "up" { None } else { Some(mode.to_string()) };
+                        return if mode == "up" {
+                            None
+                        } else {
+                            Some(mode.to_string())
+                        };
                     }
                 }
                 None
@@ -279,23 +283,26 @@ impl IfaceData {
         }
         if let Some(dns) = &self.dns_addresses {
             if !dns.is_empty() {
-                m.insert("dns_addresses".into(), Value::Array(
-                    dns.iter().map(|s| Value::String(s.clone())).collect(),
-                ));
+                m.insert(
+                    "dns_addresses".into(),
+                    Value::Array(dns.iter().map(|s| Value::String(s.clone())).collect()),
+                );
             }
         }
         if let Some(srch) = &self.dns_search {
             if !srch.is_empty() {
-                m.insert("dns_search".into(), Value::Array(
-                    srch.iter().map(|s| Value::String(s.clone())).collect(),
-                ));
+                m.insert(
+                    "dns_search".into(),
+                    Value::Array(srch.iter().map(|s| Value::String(s.clone())).collect()),
+                );
             }
         }
         if let Some(routes) = &self.routes {
             if !routes.is_empty() {
-                m.insert("routes".into(), Value::Array(
-                    routes.iter().map(|r| Value::Object(r.clone())).collect(),
-                ));
+                m.insert(
+                    "routes".into(),
+                    Value::Array(routes.iter().map(|r| Value::Object(r.clone())).collect()),
+                );
             }
         }
         if let Some(am) = self.activation_mode() {
@@ -311,9 +318,15 @@ impl IfaceData {
             m.insert("vrf".into(), Value::String(vf.clone()));
         }
         if !self.members.is_empty() {
-            m.insert("interfaces".into(), Value::Array(
-                self.members.iter().map(|s| Value::String(s.clone())).collect(),
-            ));
+            m.insert(
+                "interfaces".into(),
+                Value::Array(
+                    self.members
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
         }
         m
     }
@@ -342,9 +355,14 @@ fn query_networkd() -> Result<Vec<Value>> {
 }
 
 fn query_nm() -> Vec<Value> {
-    let out = match run_cmd(&["nmcli", "-t", "-f",
-                               "DEVICE,NAME,UUID,FILENAME,TYPE,AUTOCONNECT",
-                               "con", "show"]) {
+    let out = match run_cmd(&[
+        "nmcli",
+        "-t",
+        "-f",
+        "DEVICE,NAME,UUID,FILENAME,TYPE,AUTOCONNECT",
+        "con",
+        "show",
+    ]) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -353,11 +371,11 @@ fn query_nm() -> Vec<Value> {
         let parts: Vec<&str> = line.split(':').collect();
         if parts.len() >= 6 && !parts[0].is_empty() {
             let mut m = Map::new();
-            m.insert("device".into(),      Value::String(parts[0].to_string()));
-            m.insert("name".into(),        Value::String(parts[1].to_string()));
-            m.insert("uuid".into(),        Value::String(parts[2].to_string()));
-            m.insert("filename".into(),    Value::String(parts[3].to_string()));
-            m.insert("type".into(),        Value::String(parts[4].to_string()));
+            m.insert("device".into(), Value::String(parts[0].to_string()));
+            m.insert("name".into(), Value::String(parts[1].to_string()));
+            m.insert("uuid".into(), Value::String(parts[2].to_string()));
+            m.insert("filename".into(), Value::String(parts[3].to_string()));
+            m.insert("type".into(), Value::String(parts[4].to_string()));
             m.insert("autoconnect".into(), Value::String(parts[5].to_string()));
             data.push(Value::Object(m));
         }
@@ -371,22 +389,30 @@ fn query_routes() -> (Vec<Value>, Vec<Value>) {
     if let Ok(o) = run_cmd(&["ip", "-d", "-j", "-4", "route", "show", "table", "all"]) {
         if let Ok(v) = serde_json::from_str::<Value>(&o) {
             if let Some(arr) = v.as_array() {
-                r4 = arr.iter().map(|x| {
-                    let mut v = x.clone();
-                    v.as_object_mut().map(|m| m.insert("family".into(), Value::Number(2.into())));
-                    v
-                }).collect();
+                r4 = arr
+                    .iter()
+                    .map(|x| {
+                        let mut v = x.clone();
+                        v.as_object_mut()
+                            .map(|m| m.insert("family".into(), Value::Number(2.into())));
+                        v
+                    })
+                    .collect();
             }
         }
     }
     if let Ok(o) = run_cmd(&["ip", "-d", "-j", "-6", "route", "show", "table", "all"]) {
         if let Ok(v) = serde_json::from_str::<Value>(&o) {
             if let Some(arr) = v.as_array() {
-                r6 = arr.iter().map(|x| {
-                    let mut v = x.clone();
-                    v.as_object_mut().map(|m| m.insert("family".into(), Value::Number(10.into())));
-                    v
-                }).collect();
+                r6 = arr
+                    .iter()
+                    .map(|x| {
+                        let mut v = x.clone();
+                        v.as_object_mut()
+                            .map(|m| m.insert("family".into(), Value::Number(10.into())));
+                        v
+                    })
+                    .collect();
             }
         }
     }
@@ -400,11 +426,15 @@ fn query_resolved() -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, String)>) {
         None => return (vec![], vec![]),
     };
     let out = match run_cmd(&[
-        &busctl, "--json=short", "call", "--system",
+        &busctl,
+        "--json=short",
+        "call",
+        "--system",
         "org.freedesktop.resolve1",
         "/org/freedesktop/resolve1",
         "org.freedesktop.DBus.Properties",
-        "GetAll", "s",
+        "GetAll",
+        "s",
         "org.freedesktop.resolve1.Manager",
     ]) {
         Ok(o) => o,
@@ -416,7 +446,11 @@ fn query_resolved() -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, String)>) {
 fn which_busctl() -> Option<String> {
     let out = Command::new("which").arg("busctl").output().ok()?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 fn parse_resolved_json(json_str: &str) -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, String)>) {
@@ -430,14 +464,23 @@ fn parse_resolved_json(json_str: &str) -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, S
     };
 
     let mut addresses = vec![];
-    if let Some(dns_arr) = data.get("DNS").and_then(|d| d.get("data")).and_then(|d| d.as_array()) {
+    if let Some(dns_arr) = data
+        .get("DNS")
+        .and_then(|d| d.get("data"))
+        .and_then(|d| d.as_array())
+    {
         for entry in dns_arr {
             if let Some(arr) = entry.as_array() {
                 if arr.len() >= 3 {
                     let ifidx = arr[0].as_u64().unwrap_or(0);
                     let family = arr[1].as_u64().unwrap_or(0);
-                    let bytes: Vec<u8> = arr[2].as_array()
-                        .map(|a| a.iter().filter_map(|v| v.as_u64().map(|n| n as u8)).collect())
+                    let bytes: Vec<u8> = arr[2]
+                        .as_array()
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_u64().map(|n| n as u8))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     addresses.push((ifidx, family, bytes));
                 }
@@ -446,7 +489,11 @@ fn parse_resolved_json(json_str: &str) -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, S
     }
 
     let mut search = vec![];
-    if let Some(dom_arr) = data.get("Domains").and_then(|d| d.get("data")).and_then(|d| d.as_array()) {
+    if let Some(dom_arr) = data
+        .get("Domains")
+        .and_then(|d| d.get("data"))
+        .and_then(|d| d.as_array())
+    {
         for entry in dom_arr {
             if let Some(arr) = entry.as_array() {
                 if arr.len() >= 2 {
@@ -462,10 +509,22 @@ fn parse_resolved_json(json_str: &str) -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, S
 }
 
 fn query_nm_ssid(con_name: &str) -> Option<String> {
-    let out = run_cmd(&["nmcli", "--get-values", "802-11-wireless.ssid",
-                        "con", "show", "id", con_name]).ok()?;
+    let out = run_cmd(&[
+        "nmcli",
+        "--get-values",
+        "802-11-wireless.ssid",
+        "con",
+        "show",
+        "id",
+        con_name,
+    ])
+    .ok()?;
     let s = out.trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 fn query_networkctl_text(ifname: &str) -> String {
@@ -482,9 +541,15 @@ fn query_members(ifname: &str) -> Vec<String> {
         Err(_) => return vec![],
     };
     v.as_array()
-        .map(|a| a.iter()
-            .filter_map(|m| m.get("ifname").and_then(|n| n.as_str()).map(|s| s.to_string()))
-            .collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| {
+                    m.get("ifname")
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -492,8 +557,8 @@ fn query_members(ifname: &str) -> Vec<String> {
 fn resolvconf_json(root_dir: &str) -> Map<String, Value> {
     let mut res = Map::new();
     res.insert("addresses".into(), Value::Array(vec![]));
-    res.insert("search".into(),    Value::Array(vec![]));
-    res.insert("mode".into(),      Value::Null);
+    res.insert("search".into(), Value::Array(vec![]));
+    res.insert("mode".into(), Value::Null);
 
     let path = std::path::PathBuf::from(root_dir).join("etc/resolv.conf");
     let content = match std::fs::read_to_string(&path) {
@@ -525,13 +590,14 @@ fn resolvconf_json(root_dir: &str) -> Map<String, Value> {
             }
         }
         if let Some(rest) = line.strip_prefix("search") {
-            search = rest.split_whitespace()
+            search = rest
+                .split_whitespace()
                 .map(|s| Value::String(s.to_string()))
                 .collect();
         }
     }
     *res.get_mut("addresses").unwrap() = Value::Array(addresses);
-    *res.get_mut("search").unwrap()    = Value::Array(search);
+    *res.get_mut("search").unwrap() = Value::Array(search);
     res
 }
 
@@ -565,41 +631,85 @@ fn build_iface(
     routes6: &[Value],
 ) -> IfaceData {
     let idx = ip.get("ifindex").and_then(|v| v.as_u64()).unwrap_or(0);
-    let name = ip.get("ifname").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
-    let flags: Vec<&str> = ip.get("flags")
+    let name = ip
+        .get("ifname")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let flags: Vec<&str> = ip
+        .get("flags")
         .and_then(|f| f.as_array())
         .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
         .unwrap_or_default();
     let adminstate = if flags.contains(&"UP") { "UP" } else { "DOWN" };
-    let operstate = ip.get("operstate").and_then(|v| v.as_str()).unwrap_or("UNKNOWN").to_uppercase();
-    let macaddress = ip.get("address").and_then(|v| v.as_str())
+    let operstate = ip
+        .get("operstate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN")
+        .to_uppercase();
+    let macaddress = ip
+        .get("address")
+        .and_then(|v| v.as_str())
         .filter(|s| s.len() == 17)
         .map(|s| s.to_lowercase());
-    let iproute_type = ip.get("linkinfo")
+    let iproute_type = ip
+        .get("linkinfo")
         .and_then(|li| li.get("info_kind"))
         .and_then(|v| v.as_str())
         .map(|s| s.trim().to_string());
 
     // Match networkd entry by index
-    let nd = nd_data.iter().find(|x| x.get("Index").and_then(|i| i.as_u64()) == Some(idx));
-    let nd_type = nd.and_then(|x| x.get("Type")).and_then(|v| v.as_str()).map(|s| s.to_lowercase());
-    let nd_kind = nd.and_then(|x| x.get("Kind")).and_then(|v| v.as_str()).map(|s| s.to_lowercase());
-    let nd_setup_state = nd.and_then(|x| x.get("SetupState")).and_then(|v| v.as_str()).map(String::from);
-    let nd_network_file = nd.and_then(|x| x.get("NetworkFile")).and_then(|v| v.as_str()).map(String::from);
-    let nd_vendor = nd.and_then(|x| x.get("Vendor")).and_then(|v| v.as_str()).map(String::from);
+    let nd = nd_data
+        .iter()
+        .find(|x| x.get("Index").and_then(|i| i.as_u64()) == Some(idx));
+    let nd_type = nd
+        .and_then(|x| x.get("Type"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase());
+    let nd_kind = nd
+        .and_then(|x| x.get("Kind"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_lowercase());
+    let nd_setup_state = nd
+        .and_then(|x| x.get("SetupState"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nd_network_file = nd
+        .and_then(|x| x.get("NetworkFile"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nd_vendor = nd
+        .and_then(|x| x.get("Vendor"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     // Match NM entry by device name
-    let nm = nm_data.iter().find(|x| x.get("device").and_then(|d| d.as_str()) == Some(&name));
-    let nm_filename = nm.and_then(|x| x.get("filename")).and_then(|v| v.as_str()).map(String::from);
-    let nm_name = nm.and_then(|x| x.get("name")).and_then(|v| v.as_str()).map(String::from);
-    let nm_type = nm.and_then(|x| x.get("type")).and_then(|v| v.as_str()).map(String::from);
-    let nm_autoconnect = nm.and_then(|x| x.get("autoconnect")).and_then(|v| v.as_str()).map(String::from);
+    let nm = nm_data
+        .iter()
+        .find(|x| x.get("device").and_then(|d| d.as_str()) == Some(&name));
+    let nm_filename = nm
+        .and_then(|x| x.get("filename"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nm_name = nm
+        .and_then(|x| x.get("name"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nm_type = nm
+        .and_then(|x| x.get("type"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    let nm_autoconnect = nm
+        .and_then(|x| x.get("autoconnect"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
 
     // DNS addresses for this interface
     let dns_addr_list: Option<Vec<String>> = if dns_addresses.is_empty() {
         None
     } else {
-        let addrs: Vec<String> = dns_addresses.iter()
+        let addrs: Vec<String> = dns_addresses
+            .iter()
             .filter(|(ifidx, _, _)| *ifidx == idx)
             .filter_map(|(_, family, bytes)| bytes_to_ip(*family, bytes))
             .collect();
@@ -609,7 +719,8 @@ fn build_iface(
     let dns_search_list: Option<Vec<String>> = if dns_search.is_empty() {
         None
     } else {
-        let srch: Vec<String> = dns_search.iter()
+        let srch: Vec<String> = dns_search
+            .iter()
             .filter(|(ifidx, _)| *ifidx == idx)
             .map(|(_, domain)| domain.clone())
             .collect();
@@ -627,15 +738,33 @@ fn build_iface(
                 continue;
             }
             let mut m = Map::new();
-            if let Some(v) = r.get("dst") { m.insert("to".into(), v.clone()); }
-            if let Some(v) = r.get("family") { m.insert("family".into(), v.clone()); }
-            if let Some(v) = r.get("gateway") { m.insert("via".into(), v.clone()); }
-            if let Some(v) = r.get("prefsrc") { m.insert("from".into(), v.clone()); }
-            if let Some(v) = r.get("metric") { m.insert("metric".into(), v.clone()); }
-            if let Some(v) = r.get("type") { m.insert("type".into(), v.clone()); }
-            if let Some(v) = r.get("scope") { m.insert("scope".into(), v.clone()); }
-            if let Some(v) = r.get("protocol") { m.insert("protocol".into(), v.clone()); }
-            if let Some(v) = r.get("table") { m.insert("table".into(), v.clone()); }
+            if let Some(v) = r.get("dst") {
+                m.insert("to".into(), v.clone());
+            }
+            if let Some(v) = r.get("family") {
+                m.insert("family".into(), v.clone());
+            }
+            if let Some(v) = r.get("gateway") {
+                m.insert("via".into(), v.clone());
+            }
+            if let Some(v) = r.get("prefsrc") {
+                m.insert("from".into(), v.clone());
+            }
+            if let Some(v) = r.get("metric") {
+                m.insert("metric".into(), v.clone());
+            }
+            if let Some(v) = r.get("type") {
+                m.insert("type".into(), v.clone());
+            }
+            if let Some(v) = r.get("scope") {
+                m.insert("scope".into(), v.clone());
+            }
+            if let Some(v) = r.get("protocol") {
+                m.insert("protocol".into(), v.clone());
+            }
+            if let Some(v) = r.get("table") {
+                m.insert("table".into(), v.clone());
+            }
             out.push(m);
         }
         Some(out)
@@ -702,7 +831,10 @@ fn build_addresses(ip: &Value, routes: Option<&[Map<String, Value>]>) -> Option<
             None => continue,
         };
         let prefixlen = addr.get("prefixlen").and_then(|v| v.as_u64()).unwrap_or(0);
-        let dynamic = addr.get("dynamic").and_then(|v| v.as_bool()).unwrap_or(false);
+        let dynamic = addr
+            .get("dynamic")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
 
         let mut flags: Vec<&str> = vec![];
 
@@ -740,9 +872,10 @@ fn build_addresses(ip: &Value, routes: Option<&[Map<String, Value>]>) -> Option<
         let mut inner = Map::new();
         inner.insert("prefix".into(), Value::Number(prefixlen.into()));
         if !flags.is_empty() {
-            inner.insert("flags".into(), Value::Array(
-                flags.iter().map(|s| Value::String(s.to_string())).collect(),
-            ));
+            inner.insert(
+                "flags".into(),
+                Value::Array(flags.iter().map(|s| Value::String(s.to_string())).collect()),
+            );
         }
         let mut outer = Map::new();
         outer.insert(ip_key, Value::Object(inner));
@@ -770,11 +903,19 @@ fn parse_ipv6_cidr(cidr: &str) -> Option<(Ipv6Addr, u32)> {
 }
 
 fn ipv6_in_network(addr: &Ipv6Addr, net: &Ipv6Addr, prefix: u32) -> bool {
-    if prefix == 0 { return true; }
-    if prefix > 128 { return false; }
+    if prefix == 0 {
+        return true;
+    }
+    if prefix > 128 {
+        return false;
+    }
     let addr_bits = u128::from_be_bytes(addr.octets());
-    let net_bits  = u128::from_be_bytes(net.octets());
-    let mask = if prefix == 128 { u128::MAX } else { !((1u128 << (128 - prefix)) - 1) };
+    let net_bits = u128::from_be_bytes(net.octets());
+    let mask = if prefix == 128 {
+        u128::MAX
+    } else {
+        !((1u128 << (128 - prefix)) - 1)
+    };
     (addr_bits & mask) == (net_bits & mask)
 }
 
@@ -785,7 +926,8 @@ fn correlate_members_and_uplinks(ifaces: &mut Vec<IfaceData>) {
     let mut members_to_uplink: HashMap<String, (String, &'static str)> = HashMap::new();
     let mut uplink_to_members: HashMap<String, Vec<String>> = HashMap::new();
 
-    let uplinks: Vec<(String, &'static str)> = ifaces.iter()
+    let uplinks: Vec<(String, &'static str)> = ifaces
+        .iter()
         .filter_map(|iface| {
             if let Some(t) = iface.iface_type() {
                 if uplink_types.contains(&t) {
@@ -808,8 +950,8 @@ fn correlate_members_and_uplinks(ifaces: &mut Vec<IfaceData>) {
         if let Some((uplink_name, uplink_type)) = members_to_uplink.get(&iface.name) {
             match *uplink_type {
                 "bridge" => iface.bridge = Some(uplink_name.clone()),
-                "bond"   => iface.bond   = Some(uplink_name.clone()),
-                "vrf"    => iface.vrf    = Some(uplink_name.clone()),
+                "bond" => iface.bond = Some(uplink_name.clone()),
+                "vrf" => iface.vrf = Some(uplink_name.clone()),
                 _ => {}
             }
         }
@@ -825,22 +967,52 @@ fn correlate_members_and_uplinks(ifaces: &mut Vec<IfaceData>) {
 
 fn query_online_state(ifaces: &[&IfaceData]) -> bool {
     for iface in ifaces {
-        if !iface.is_up() { continue; }
-        let has_addrs = iface.addresses.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
-        let has_routes = iface.routes.as_ref().map(|r| !r.is_empty()).unwrap_or(false);
-        let has_dns = iface.dns_addresses.as_ref().map(|d| !d.is_empty()).unwrap_or(false);
-        if !has_addrs || !has_routes || !has_dns { continue; }
+        if !iface.is_up() {
+            continue;
+        }
+        let has_addrs = iface
+            .addresses
+            .as_ref()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false);
+        let has_routes = iface
+            .routes
+            .as_ref()
+            .map(|r| !r.is_empty())
+            .unwrap_or(false);
+        let has_dns = iface
+            .dns_addresses
+            .as_ref()
+            .map(|d| !d.is_empty())
+            .unwrap_or(false);
+        if !has_addrs || !has_routes || !has_dns {
+            continue;
+        }
 
         // check non-link-local IPs
-        let non_local: Vec<_> = iface.addresses.as_ref().unwrap().iter().filter_map(|entry| {
-            let obj = entry.as_object()?;
-            let (ip, extra) = obj.iter().next()?;
-            let flags = extra.get("flags")?.as_array()?;
-            let is_link = flags.iter().any(|f| f.as_str() == Some("link"));
-            if is_link { None } else { Some(ip.clone()) }
-        }).collect();
+        let non_local: Vec<_> = iface
+            .addresses
+            .as_ref()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| {
+                let obj = entry.as_object()?;
+                let (ip, extra) = obj.iter().next()?;
+                let flags = extra.get("flags")?.as_array()?;
+                let is_link = flags.iter().any(|f| f.as_str() == Some("link"));
+                if is_link {
+                    None
+                } else {
+                    Some(ip.clone())
+                }
+            })
+            .collect();
 
-        let has_default = iface.routes.as_ref().unwrap().iter()
+        let has_default = iface
+            .routes
+            .as_ref()
+            .unwrap()
+            .iter()
             .any(|r| r.get("to").and_then(|v| v.as_str()) == Some("default"));
 
         if !non_local.is_empty() && has_default {
@@ -871,7 +1043,8 @@ fn python_json_dumps(v: &Value) -> String {
             format!("[{}]", items.join(", "))
         }
         Value::Object(map) => {
-            let items: Vec<String> = map.iter()
+            let items: Vec<String> = map
+                .iter()
                 .map(|(k, v)| format!("\"{}\": {}", k, python_json_dumps(v)))
                 .collect();
             format!("{{{}}}", items.join(", "))
@@ -927,13 +1100,23 @@ fn yaml_scalar(s: &str) -> String {
     // Strings that need quoting: empty, contain ': ', start with special chars,
     // are YAML reserved words, or contain newlines
     let needs_quote = s.is_empty()
-        || s == "true" || s == "false" || s == "null" || s == "yes" || s == "no"
+        || s == "true"
+        || s == "false"
+        || s == "null"
+        || s == "yes"
+        || s == "no"
         || s.contains(": ")
         || s.contains('\n')
-        || s.starts_with('{') || s.starts_with('[')
-        || s.starts_with('\'') || s.starts_with('"')
-        || s.starts_with('*') || s.starts_with('&') || s.starts_with('!')
-        || s.starts_with('#') || s.starts_with('%') || s.starts_with('@');
+        || s.starts_with('{')
+        || s.starts_with('[')
+        || s.starts_with('\'')
+        || s.starts_with('"')
+        || s.starts_with('*')
+        || s.starts_with('&')
+        || s.starts_with('!')
+        || s.starts_with('#')
+        || s.starts_with('%')
+        || s.starts_with('@');
 
     if needs_quote {
         let escaped = s.replace('\\', "\\\\").replace('\'', "''");
@@ -960,7 +1143,6 @@ fn render_yaml(data: &Map<String, Value>) -> String {
 }
 
 // ── Tabular output ────────────────────────────────────────────────────────────
-
 
 const PAD: usize = 18;
 
@@ -989,18 +1171,25 @@ fn pretty_print(
         pline("Online state:", &state_str);
 
         if let Some(ns) = gs.get("nameservers").and_then(|v| v.as_object()) {
-            let addresses = ns.get("addresses").and_then(|v| v.as_array())
+            let addresses = ns
+                .get("addresses")
+                .and_then(|v| v.as_array())
                 .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
                 .unwrap_or_default();
             let mode = ns.get("mode").and_then(|v| v.as_str());
-            let search = ns.get("search").and_then(|v| v.as_array())
+            let search = ns
+                .get("search")
+                .and_then(|v| v.as_array())
                 .map(|a| a.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>())
                 .unwrap_or_default();
 
             for (i, addr) in addresses.iter().enumerate() {
                 let title = if i == 0 { "DNS Addresses:" } else { "" };
                 if let Some(m) = mode {
-                    pline(title, &format!("{} {}", addr, c_dim(&format!("({})", m), use_color)));
+                    pline(
+                        title,
+                        &format!("{} {}", addr, c_dim(&format!("({})", m), use_color)),
+                    );
                 } else {
                     pline(title, addr);
                 }
@@ -1013,7 +1202,8 @@ fn pretty_print(
     }
 
     // Per interface
-    let interfaces: Vec<(&str, &Value)> = data.iter()
+    let interfaces: Vec<(&str, &Value)> = data
+        .iter()
         .filter(|(k, _)| *k != "netplan-global-state")
         .map(|(k, v)| (k.as_str(), v))
         .collect();
@@ -1021,7 +1211,9 @@ fn pretty_print(
     let total_shown = interfaces.len();
     for (idx, (ifname, ifconfig)) in interfaces.iter().enumerate() {
         if let Some(filter) = ifname_filter {
-            if *ifname != filter { continue; }
+            if *ifname != filter {
+                continue;
+            }
         }
 
         let obj = match ifconfig.as_object() {
@@ -1051,13 +1243,22 @@ fn pretty_print(
     let hidden = total.saturating_sub(total_shown);
     if hidden > 0 {
         println!();
-        println!("{} inactive interfaces hidden. Use \"--all\" to show all.", hidden);
+        println!(
+            "{} inactive interfaces hidden. Use \"--all\" to show all.",
+            hidden
+        );
     }
 }
 
 fn display_interface_header(ifname: &str, obj: &Map<String, Value>, use_color: bool) {
-    let operstate = obj.get("operstate").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
-    let adminstate = obj.get("adminstate").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+    let operstate = obj
+        .get("operstate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN");
+    let adminstate = obj
+        .get("adminstate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN");
 
     let (bullet, state) = if operstate == "UP" && adminstate == "UP" {
         (c_bold_green("●", use_color), c_bold_green("UP", use_color))
@@ -1090,20 +1291,29 @@ fn display_interface_header(ifname: &str, obj: &Map<String, Value>, use_color: b
         }
     };
 
-    let backend = obj.get("backend").and_then(|v| v.as_str()).unwrap_or("unmanaged");
+    let backend = obj
+        .get("backend")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unmanaged");
     let netdef = match obj.get("id").and_then(|v| v.as_str()) {
         Some(id) => format!("{}: {}", backend, c_bold(id, use_color)),
         None => backend.to_string(),
     };
 
-    println!("{} {:>2}: {} {} {} ({})", bullet, idx, ifname, full_type, state, netdef);
+    println!(
+        "{} {:>2}: {} {} {} ({})",
+        bullet, idx, ifname, full_type, state, netdef
+    );
 }
 
 fn display_mac_address(obj: &Map<String, Value>, use_color: bool) {
     if let Some(mac) = obj.get("macaddress").and_then(|v| v.as_str()) {
         let vendor = obj.get("vendor").and_then(|v| v.as_str());
         if let Some(v) = vendor {
-            pline("MAC Address:", &format!("{} {}", mac, c_dim(&format!("({})", v), use_color)));
+            pline(
+                "MAC Address:",
+                &format!("{} {}", mac, c_dim(&format!("({})", v), use_color)),
+            );
         } else {
             pline("MAC Address:", mac);
         }
@@ -1120,7 +1330,8 @@ fn display_ip_addresses(obj: &Map<String, Value>, use_color: bool) {
         if let Some(map) = entry.as_object() {
             if let Some((ip, extra)) = map.iter().next() {
                 let prefix = extra.get("prefix").and_then(|v| v.as_u64()).unwrap_or(0);
-                let flags: Vec<&str> = extra.get("flags")
+                let flags: Vec<&str> = extra
+                    .get("flags")
                     .and_then(|v| v.as_array())
                     .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
@@ -1130,7 +1341,14 @@ fn display_ip_addresses(obj: &Map<String, Value>, use_color: bool) {
                 if flags.is_empty() {
                     pline(title, &colored_addr);
                 } else {
-                    pline(title, &format!("{} {}", colored_addr, c_dim(&format!("({})", flags.join(", ")), use_color)));
+                    pline(
+                        title,
+                        &format!(
+                            "{} {}",
+                            colored_addr,
+                            c_dim(&format!("({})", flags.join(", ")), use_color)
+                        ),
+                    );
                 }
             }
         }
@@ -1176,7 +1394,9 @@ fn display_routes(obj: &Map<String, Value>, verbose: bool, use_color: bool) {
         // non-verbose: only main table (table==254 or table=="main")
         if !verbose {
             let is_main = table_id == "main" || table_id == "254";
-            if !is_main { continue; }
+            if !is_main {
+                continue;
+            }
         }
 
         let to = r.get("to").and_then(|v| v.as_str()).unwrap_or("");
@@ -1189,23 +1409,42 @@ fn display_routes(obj: &Map<String, Value>, verbose: bool, use_color: bool) {
 
         let to_colored = c_bold(to, use_color && to == "default");
         let mut route_str = to_colored;
-        if !via.is_empty() { route_str.push_str(&format!(" via {}", via)); }
-        if !from.is_empty() { route_str.push_str(&format!(" from {}", from)); }
-        if let Some(m) = metric { route_str.push_str(&format!(" metric {}", m)); }
+        if !via.is_empty() {
+            route_str.push_str(&format!(" via {}", via));
+        }
+        if !from.is_empty() {
+            route_str.push_str(&format!(" from {}", from));
+        }
+        if let Some(m) = metric {
+            route_str.push_str(&format!(" metric {}", m));
+        }
         if verbose {
             route_str.push_str(&format!(" table {}", table_id));
         }
 
         let mut extra = vec![];
-        if !protocol.is_empty() && protocol != "kernel" { extra.push(protocol); }
-        if !scope.is_empty() && scope != "global" { extra.push(scope); }
-        if !rtype.is_empty() && rtype != "unicast" { extra.push(rtype); }
+        if !protocol.is_empty() && protocol != "kernel" {
+            extra.push(protocol);
+        }
+        if !scope.is_empty() && scope != "global" {
+            extra.push(scope);
+        }
+        if !rtype.is_empty() && rtype != "unicast" {
+            extra.push(rtype);
+        }
 
         let title = if displayed == 0 { "Routes:" } else { "" };
         if extra.is_empty() {
             pline(title, &route_str);
         } else {
-            pline(title, &format!("{} {}", route_str, c_dim(&format!("({})", extra.join(", ")), use_color)));
+            pline(
+                title,
+                &format!(
+                    "{} {}",
+                    route_str,
+                    c_dim(&format!("({})", extra.join(", ")), use_color)
+                ),
+            );
         }
         displayed += 1;
     }
@@ -1352,15 +1591,19 @@ fn normalize_ip(addr: &str) -> String {
 #[allow(dead_code)]
 fn ip_family(addr: &str) -> u64 {
     let ip_part = addr.split('/').next().unwrap_or(addr);
-    if ip_part.parse::<Ipv4Addr>().is_ok() { 2 } else { 10 }
+    if ip_part.parse::<Ipv4Addr>().is_ok() {
+        2
+    } else {
+        10
+    }
 }
 
 fn parse_table_name(table: &str) -> Option<u64> {
     match table {
-        "main"    => Some(254),
-        "local"   => Some(255),
+        "main" => Some(254),
+        "local" => Some(255),
         "default" => Some(253),
-        "unspec"  => Some(0),
+        "unspec" => Some(0),
         s => s.parse::<u64>().ok(),
     }
 }
@@ -1378,18 +1621,32 @@ fn is_link_local_ip(addr: &str) -> bool {
 
 fn is_valid_macaddress(mac: &str) -> bool {
     let parts: Vec<&str> = mac.split(':').collect();
-    if parts.len() != 6 { return false; }
-    parts.iter().all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()))
+    if parts.len() != 6 {
+        return false;
+    }
+    parts
+        .iter()
+        .all(|p| p.len() == 2 && p.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 fn ipv6_net_contains(net_str: &str, addr_str: &str) -> bool {
     let ip_part = addr_str.split('/').next().unwrap_or(addr_str);
     let net_ip = net_str.split('/').next().unwrap_or(net_str);
-    let prefix: u32 = net_str.split('/').nth(1).and_then(|s| s.parse().ok()).unwrap_or(128);
+    let prefix: u32 = net_str
+        .split('/')
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(128);
     if let (Ok(net), Ok(addr)) = (net_ip.parse::<Ipv6Addr>(), ip_part.parse::<Ipv6Addr>()) {
         let addr_bits = u128::from_be_bytes(addr.octets());
-        let net_bits  = u128::from_be_bytes(net.octets());
-        let mask = if prefix == 0 { 0u128 } else if prefix >= 128 { u128::MAX } else { !((1u128 << (128 - prefix)) - 1) };
+        let net_bits = u128::from_be_bytes(net.octets());
+        let mask = if prefix == 0 {
+            0u128
+        } else if prefix >= 128 {
+            u128::MAX
+        } else {
+            !((1u128 << (128 - prefix)) - 1)
+        };
         return (addr_bits & mask) == (net_bits & mask);
     }
     false
@@ -1399,8 +1656,14 @@ fn ip_network_str(cidr: &str) -> String {
     let parts: Vec<&str> = cidr.splitn(2, '/').collect();
     let prefix: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(32);
     if let Ok(ip4) = parts[0].parse::<Ipv4Addr>() {
-        if prefix == 0 { return format!("0.0.0.0/{}", prefix); }
-        let mask = if prefix >= 32 { 0xFFFFFFFFu32 } else { !(( 1u32 << (32 - prefix)) - 1) };
+        if prefix == 0 {
+            return format!("0.0.0.0/{}", prefix);
+        }
+        let mask = if prefix >= 32 {
+            0xFFFFFFFFu32
+        } else {
+            !((1u32 << (32 - prefix)) - 1)
+        };
         let net_bits = u32::from_be_bytes(ip4.octets()) & mask;
         let net = Ipv4Addr::from(net_bits);
         return format!("{}/{}", net, prefix);
@@ -1408,7 +1671,13 @@ fn ip_network_str(cidr: &str) -> String {
     if let Ok(ip6) = parts[0].parse::<Ipv6Addr>() {
         let prefix6: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(128);
         let addr_bits = u128::from_be_bytes(ip6.octets());
-        let mask = if prefix6 == 0 { 0u128 } else if prefix6 >= 128 { u128::MAX } else { !((1u128 << (128 - prefix6)) - 1) };
+        let mask = if prefix6 == 0 {
+            0u128
+        } else if prefix6 >= 128 {
+            u128::MAX
+        } else {
+            !((1u128 << (128 - prefix6)) - 1)
+        };
         let net_bits = addr_bits & mask;
         let net = Ipv6Addr::from(net_bits.to_be_bytes());
         return format!("{}/{}", net, prefix6);
@@ -1430,7 +1699,7 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
         Err(_) => return HashMap::new(),
     };
 
-    let yaml_val: serde_yaml::Value = match serde_yaml::from_str(&yaml_str) {
+    let yaml_val: Value = match crate::yaml::from_str(&yaml_str) {
         Ok(v) => v,
         Err(_) => return HashMap::new(),
     };
@@ -1457,16 +1726,12 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
 
     for (section, iface_type) in &section_type_map {
         let section_val = match network.get(section) {
-            Some(v) if v.is_mapping() => v,
+            Some(v) if v.is_object() => v,
             _ => continue,
         };
-        for (id_val, cfg) in section_val.as_mapping().unwrap() {
-            let id = match id_val.as_str() {
-                Some(s) => s.to_string(),
-                None => continue,
-            };
+        for (id, cfg) in section_val.as_object().unwrap() {
             let cfg = match cfg {
-                serde_yaml::Value::Mapping(m) => m,
+                Value::Object(m) => m,
                 _ => continue,
             };
 
@@ -1498,10 +1763,14 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
                 iface.dhcp6 = v.as_bool().unwrap_or(false);
             }
             if let Some(ll) = cfg.get("link-local") {
-                if let Some(arr) = ll.as_sequence() {
+                if let Some(arr) = ll.as_array() {
                     for item in arr {
-                        if item.as_str() == Some("ipv4") { iface.link_local_ipv4 = true; }
-                        if item.as_str() == Some("ipv6") { iface.link_local_ipv6 = true; }
+                        if item.as_str() == Some("ipv4") {
+                            iface.link_local_ipv4 = true;
+                        }
+                        if item.as_str() == Some("ipv6") {
+                            iface.link_local_ipv6 = true;
+                        }
                     }
                 }
             }
@@ -1511,15 +1780,12 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
 
             // Addresses
             if let Some(addrs) = cfg.get("addresses") {
-                if let Some(arr) = addrs.as_sequence() {
+                if let Some(arr) = addrs.as_array() {
                     for a in arr {
                         let addr_str = match a {
-                            serde_yaml::Value::String(s) => normalize_ip(s),
-                            serde_yaml::Value::Mapping(m) => {
-                                m.keys().next()
-                                    .and_then(|k| k.as_str())
-                                    .map(|s| normalize_ip(s))
-                                    .unwrap_or_default()
+                            Value::String(s) => normalize_ip(s),
+                            Value::Object(m) => {
+                                m.keys().next().map(|k| normalize_ip(k)).unwrap_or_default()
                             }
                             _ => continue,
                         };
@@ -1532,14 +1798,14 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
 
             // Nameservers
             if let Some(ns) = cfg.get("nameservers") {
-                if let Some(addrs) = ns.get("addresses").and_then(|v| v.as_sequence()) {
+                if let Some(addrs) = ns.get("addresses").and_then(|v| v.as_array()) {
                     for a in addrs {
                         if let Some(s) = a.as_str() {
                             iface.nameservers.push(s.to_string());
                         }
                     }
                 }
-                if let Some(search) = ns.get("search").and_then(|v| v.as_sequence()) {
+                if let Some(search) = ns.get("search").and_then(|v| v.as_array()) {
                     for s in search {
                         if let Some(s) = s.as_str() {
                             iface.search_domains.push(s.to_string());
@@ -1549,7 +1815,7 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
             }
 
             // Routes
-            if let Some(routes) = cfg.get("routes").and_then(|v| v.as_sequence()) {
+            if let Some(routes) = cfg.get("routes").and_then(|v| v.as_array()) {
                 for r in routes {
                     if let Some(dr) = parse_yaml_route(r) {
                         iface.routes.push(dr);
@@ -1581,7 +1847,7 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
                 iface.vrf = Some(v.to_string());
             }
 
-            ifaces.insert(id, iface);
+            ifaces.insert(id.clone(), iface);
         }
     }
 
@@ -1612,8 +1878,8 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
     ifaces
 }
 
-fn parse_yaml_route(r: &serde_yaml::Value) -> Option<DiffRoute> {
-    let m = r.as_mapping()?;
+fn parse_yaml_route(r: &Value) -> Option<DiffRoute> {
+    let m = r.as_object()?;
     let mut dr = DiffRoute::new();
     if let Some(to) = m.get("to").and_then(|v| v.as_str()) {
         dr.to = normalize_ip(to);
@@ -1628,8 +1894,11 @@ fn parse_yaml_route(r: &serde_yaml::Value) -> Option<DiffRoute> {
     if let Some(via) = m.get("via").and_then(|v| v.as_str()) {
         dr.via = normalize_ip(via);
     }
-    if let Some(from) = m.get("on-link").and_then(|v| v.as_str())
-        .or_else(|| m.get("from").and_then(|v| v.as_str())) {
+    if let Some(from) = m
+        .get("on-link")
+        .and_then(|v| v.as_str())
+        .or_else(|| m.get("from").and_then(|v| v.as_str()))
+    {
         dr.from_addr = normalize_ip(from);
     }
     if let Some(metric) = m.get("metric").and_then(|v| v.as_u64()) {
@@ -1715,14 +1984,20 @@ fn filter_system_routes(
     system_addresses: &[String],
     netplan: &NetplanIface,
 ) -> Vec<DiffRoute> {
-    let local_networks: Vec<String> = system_addresses.iter()
+    let local_networks: Vec<String> = system_addresses
+        .iter()
         .filter_map(|addr| {
             let net = ip_network_str(addr);
             // exclude fe80::/64
-            if net == "fe80::/64" { None } else { Some(net) }
+            if net == "fe80::/64" {
+                None
+            } else {
+                Some(net)
+            }
         })
         .collect();
-    let addresses: Vec<String> = system_addresses.iter()
+    let addresses: Vec<String> = system_addresses
+        .iter()
         .map(|addr| addr.split('/').next().unwrap_or(addr).to_string())
         .collect();
 
@@ -1760,11 +2035,16 @@ fn filter_system_routes(
         }
 
         // Filter host-scoped local routes
-        if dr.scope == "host" && dr.route_type == "local"
+        if dr.scope == "host"
+            && dr.route_type == "local"
             && (addresses.contains(&dr.to) || {
                 let ip_part = dr.to.split('/').next().unwrap_or(&dr.to);
-                ip_part.parse::<Ipv4Addr>().map_or(false, |ip| ip.is_loopback())
-                || ip_part.parse::<Ipv6Addr>().map_or(false, |ip| ip.is_loopback())
+                ip_part
+                    .parse::<Ipv4Addr>()
+                    .map_or(false, |ip| ip.is_loopback())
+                    || ip_part
+                        .parse::<Ipv6Addr>()
+                        .map_or(false, |ip| ip.is_loopback())
             })
         {
             continue;
@@ -1781,7 +2061,10 @@ fn filter_system_routes(
                 continue;
             }
             // Also check if dr.to is contained in any local network
-            if local_networks.iter().any(|net| ipv6_net_contains(net, &dr.to)) {
+            if local_networks
+                .iter()
+                .any(|net| ipv6_net_contains(net, &dr.to))
+            {
                 continue;
             }
         }
@@ -1792,24 +2075,27 @@ fn filter_system_routes(
 }
 
 fn normalize_netplan_routes(routes: &[DiffRoute]) -> Vec<DiffRoute> {
-    routes.iter().map(|r| {
-        let mut dr = r.clone();
-        // UNSPEC table → main (254)
-        if dr.table.is_none() {
-            dr.table = Some(254);
-        }
-        dr.to = normalize_ip(&dr.to);
-        dr.via = normalize_ip(&dr.via);
-        dr.from_addr = normalize_ip(&dr.from_addr);
-        // strip /32 and /128
-        if dr.to != "default" {
-            let parts: Vec<&str> = dr.to.splitn(2, '/').collect();
-            if parts.len() == 2 && (parts[1] == "32" || parts[1] == "128") {
-                dr.to = parts[0].to_string();
+    routes
+        .iter()
+        .map(|r| {
+            let mut dr = r.clone();
+            // UNSPEC table → main (254)
+            if dr.table.is_none() {
+                dr.table = Some(254);
             }
-        }
-        dr
-    }).collect()
+            dr.to = normalize_ip(&dr.to);
+            dr.via = normalize_ip(&dr.via);
+            dr.from_addr = normalize_ip(&dr.from_addr);
+            // strip /32 and /128
+            if dr.to != "default" {
+                let parts: Vec<&str> = dr.to.splitn(2, '/').collect();
+                if parts.len() == 2 && (parts[1] == "32" || parts[1] == "128") {
+                    dr.to = parts[0].to_string();
+                }
+            }
+            dr
+        })
+        .collect()
 }
 
 fn normalize_gateway_routes(
@@ -1819,11 +2105,12 @@ fn normalize_gateway_routes(
     let mut out = vec![];
 
     if let Some(gw4) = &np.gateway4 {
-        let default_static: Vec<&Map<String, Value>> = system_routes.iter()
+        let default_static: Vec<&Map<String, Value>> = system_routes
+            .iter()
             .filter(|r| {
                 r.get("to").and_then(|v| v.as_str()) == Some("default")
-                && r.get("family").and_then(|v| v.as_u64()) == Some(2)
-                && r.get("protocol").and_then(|v| v.as_str()) == Some("static")
+                    && r.get("family").and_then(|v| v.as_u64()) == Some(2)
+                    && r.get("protocol").and_then(|v| v.as_str()) == Some("static")
             })
             .collect();
         let mut dr = DiffRoute::new();
@@ -1849,11 +2136,12 @@ fn normalize_gateway_routes(
     }
 
     if let Some(gw6) = &np.gateway6 {
-        let default_static: Vec<&Map<String, Value>> = system_routes.iter()
+        let default_static: Vec<&Map<String, Value>> = system_routes
+            .iter()
             .filter(|r| {
                 r.get("to").and_then(|v| v.as_str()) == Some("default")
-                && r.get("family").and_then(|v| v.as_u64()) == Some(10)
-                && r.get("protocol").and_then(|v| v.as_str()) == Some("static")
+                    && r.get("family").and_then(|v| v.as_u64()) == Some(10)
+                    && r.get("protocol").and_then(|v| v.as_str()) == Some("static")
             })
             .collect();
         let mut dr = DiffRoute::new();
@@ -1891,23 +2179,25 @@ fn compute_diff(
     let mut report = DiffReport::default();
 
     // Collect system interfaces that have a netdef_id
-    let system_netdef_ids: HashSet<String> = system_state.iter()
+    let system_netdef_ids: HashSet<String> = system_state
+        .iter()
         .filter(|(k, _)| *k != "netplan-global-state")
         .filter_map(|(_, v)| v.get("id").and_then(|id| id.as_str()).map(String::from))
         .collect();
 
     // missing_interfaces_system: netplan-only netdefs (not wifi)
-    let mut np_only: Vec<(String, String)> = netplan_ifaces.iter()
-        .filter(|(id, np)| {
-            !system_netdef_ids.contains(*id) && np.iface_type != "wifi"
-        })
+    let mut np_only: Vec<(String, String)> = netplan_ifaces
+        .iter()
+        .filter(|(id, np)| !system_netdef_ids.contains(*id) && np.iface_type != "wifi")
         .map(|(id, np)| (id.clone(), np.iface_type.clone()))
         .collect();
     np_only.sort_by(|a, b| a.0.cmp(&b.0));
 
     for (id, itype) in np_only {
         if let Some(filter) = ifname_filter {
-            if id != filter { continue; }
+            if id != filter {
+                continue;
+            }
         }
         report.missing_interfaces_system.push((id, itype));
     }
@@ -1916,7 +2206,9 @@ fn compute_diff(
     // For each system interface, find the matching netplan iface
     let mut system_to_netplan: HashMap<String, &NetplanIface> = HashMap::new();
     for (ifname, sys_val) in system_state.iter() {
-        if ifname == "netplan-global-state" { continue; }
+        if ifname == "netplan-global-state" {
+            continue;
+        }
         if let Some(netdef_id) = sys_val.get("id").and_then(|v| v.as_str()) {
             if let Some(np) = netplan_ifaces.get(netdef_id) {
                 system_to_netplan.insert(ifname.clone(), np);
@@ -1925,12 +2217,17 @@ fn compute_diff(
     }
 
     // missing_interfaces_netplan: system-only interfaces (no netplan match)
-    let mut sys_only: Vec<(String, u64, String)> = system_state.iter()
+    let mut sys_only: Vec<(String, u64, String)> = system_state
+        .iter()
         .filter(|(k, _)| *k != "netplan-global-state")
         .filter(|(k, _)| !system_to_netplan.contains_key(*k))
         .map(|(k, v)| {
             let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0);
-            let t = v.get("type").and_then(|t| t.as_str()).unwrap_or("other").to_string();
+            let t = v
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("other")
+                .to_string();
             (k.clone(), idx, t)
         })
         .collect();
@@ -1938,20 +2235,26 @@ fn compute_diff(
 
     for (name, idx, itype) in sys_only {
         if let Some(filter) = ifname_filter {
-            if name != filter { continue; }
+            if name != filter {
+                continue;
+            }
         }
         report.missing_interfaces_netplan.push((name, idx, itype));
     }
 
     // Per-interface diff
     for (ifname, sys_val) in system_state.iter() {
-        if ifname == "netplan-global-state" { continue; }
+        if ifname == "netplan-global-state" {
+            continue;
+        }
         let np = match system_to_netplan.get(ifname) {
             Some(n) => n,
             None => continue,
         };
         if let Some(filter) = ifname_filter {
-            if ifname != filter { continue; }
+            if ifname != filter {
+                continue;
+            }
         }
 
         let idx = sys_val.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
@@ -1966,9 +2269,14 @@ fn compute_diff(
                         if let Some((ip, extra)) = obj.iter().next() {
                             let prefix = extra.get("prefix").and_then(|v| v.as_u64()).unwrap_or(0);
                             let full = format!("{}/{}", ip, prefix);
-                            let flags: Vec<String> = extra.get("flags")
+                            let flags: Vec<String> = extra
+                                .get("flags")
                                 .and_then(|v| v.as_array())
-                                .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                                .map(|a| {
+                                    a.iter()
+                                        .filter_map(|v| v.as_str().map(String::from))
+                                        .collect()
+                                })
                                 .unwrap_or_default();
                             m.insert(full, flags);
                         }
@@ -1983,11 +2291,18 @@ fn compute_diff(
 
         let mut system_static_ips: HashSet<String> = HashSet::new();
         for (addr, flags) in &sys_addr_map {
-            let ip_iface_obj = addr.parse::<std::net::IpAddr>()
-                .ok()
-                .map(|ip| (ip, addr.split('/').nth(1).and_then(|p| p.parse::<u32>().ok()).unwrap_or(32)));
+            let ip_iface_obj = addr.parse::<std::net::IpAddr>().ok().map(|ip| {
+                (
+                    ip,
+                    addr.split('/')
+                        .nth(1)
+                        .and_then(|p| p.parse::<u32>().ok())
+                        .unwrap_or(32),
+                )
+            });
 
-            let is_dhcp = flags.contains(&"dhcp".to_string()) || flags.contains(&"dynamic".to_string());
+            let is_dhcp =
+                flags.contains(&"dhcp".to_string()) || flags.contains(&"dynamic".to_string());
             let is_link = flags.contains(&"link".to_string());
             let is_ra = flags.contains(&"ra".to_string());
             let is_dynamic = is_dhcp || is_link || is_ra;
@@ -1999,7 +2314,12 @@ fn compute_diff(
 
             // Link-local: if present but link-local not enabled in netplan → count as diff
             if is_link {
-                if let Ok(ip) = addr.split('/').next().unwrap_or("").parse::<std::net::IpAddr>() {
+                if let Ok(ip) = addr
+                    .split('/')
+                    .next()
+                    .unwrap_or("")
+                    .parse::<std::net::IpAddr>()
+                {
                     if ip.is_ipv4() && !np.link_local_ipv4 {
                         system_static_ips.insert(addr.clone());
                     }
@@ -2015,7 +2335,12 @@ fn compute_diff(
             }
 
             // DHCP accounting
-            if let Ok(ip) = addr.split('/').next().unwrap_or("").parse::<std::net::IpAddr>() {
+            if let Ok(ip) = addr
+                .split('/')
+                .next()
+                .unwrap_or("")
+                .parse::<std::net::IpAddr>()
+            {
                 if ip.is_ipv4() && is_dhcp {
                     missing_dhcp4 = false;
                 }
@@ -2033,15 +2358,24 @@ fn compute_diff(
         in_np_only.sort();
         in_sys_only.sort();
 
-        if missing_dhcp4 { diff.missing_dhcp4_address = true; }
-        if missing_dhcp6 { diff.missing_dhcp6_address = true; }
+        if missing_dhcp4 {
+            diff.missing_dhcp4_address = true;
+        }
+        if missing_dhcp6 {
+            diff.missing_dhcp6_address = true;
+        }
         diff.missing_addresses_system = in_np_only;
         diff.missing_addresses_netplan = in_sys_only;
 
         // nameservers
-        let sys_ns: HashSet<String> = sys_val.get("dns_addresses")
+        let sys_ns: HashSet<String> = sys_val
+            .get("dns_addresses")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let np_ns: HashSet<String> = np.nameservers.iter().cloned().collect();
 
@@ -2070,17 +2404,28 @@ fn compute_diff(
         }
 
         // search domains
-        let sys_search: HashSet<String> = sys_val.get("dns_search")
+        let sys_search: HashSet<String> = sys_val
+            .get("dns_search")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
         let np_search: HashSet<String> = np.search_domains.iter().cloned().collect();
         let mut effective_sys_search = sys_search.clone();
         if np_search.is_empty() && (np.dhcp4 || np.dhcp6) {
             effective_sys_search.clear();
         }
-        let search_np_only: HashSet<String> = np_search.difference(&effective_sys_search).cloned().collect();
-        let search_sys_only: HashSet<String> = effective_sys_search.difference(&np_search).cloned().collect();
+        let search_np_only: HashSet<String> = np_search
+            .difference(&effective_sys_search)
+            .cloned()
+            .collect();
+        let search_sys_only: HashSet<String> = effective_sys_search
+            .difference(&np_search)
+            .cloned()
+            .collect();
         if !search_sys_only.is_empty() {
             let mut v: Vec<String> = search_sys_only.into_iter().collect();
             v.sort();
@@ -2093,7 +2438,10 @@ fn compute_diff(
         }
 
         // MAC address
-        let sys_mac = sys_val.get("macaddress").and_then(|v| v.as_str()).map(String::from);
+        let sys_mac = sys_val
+            .get("macaddress")
+            .and_then(|v| v.as_str())
+            .map(String::from);
         let np_mac = np.macaddress.clone();
         if let (Some(sm), Some(nm)) = (&sys_mac, &np_mac) {
             if is_valid_macaddress(nm) && sm != nm {
@@ -2103,15 +2451,17 @@ fn compute_diff(
         }
 
         // Routes
-        let system_routes_raw: Vec<Map<String, Value>> = sys_val.get("routes")
+        let system_routes_raw: Vec<Map<String, Value>> = sys_val
+            .get("routes")
             .and_then(|v| v.as_array())
             .map(|a| a.iter().filter_map(|v| v.as_object().cloned()).collect())
             .unwrap_or_default();
 
         let sys_addr_list: Vec<String> = sys_addr_map.keys().cloned().collect();
-        let filtered_sys_routes: HashSet<DiffRoute> = filter_system_routes(
-            &system_routes_raw, &sys_addr_list, np,
-        ).into_iter().collect();
+        let filtered_sys_routes: HashSet<DiffRoute> =
+            filter_system_routes(&system_routes_raw, &sys_addr_list, np)
+                .into_iter()
+                .collect();
 
         let np_normalized: HashSet<DiffRoute> = {
             let mut routes = normalize_netplan_routes(&np.routes);
@@ -2120,12 +2470,18 @@ fn compute_diff(
         };
 
         let routes_np_only: Vec<DiffRoute> = {
-            let mut v: Vec<DiffRoute> = np_normalized.difference(&filtered_sys_routes).cloned().collect();
+            let mut v: Vec<DiffRoute> = np_normalized
+                .difference(&filtered_sys_routes)
+                .cloned()
+                .collect();
             v.sort_by(|a, b| a.to.cmp(&b.to));
             v
         };
         let routes_sys_only: Vec<DiffRoute> = {
-            let mut v: Vec<DiffRoute> = filtered_sys_routes.difference(&np_normalized).cloned().collect();
+            let mut v: Vec<DiffRoute> = filtered_sys_routes
+                .difference(&np_normalized)
+                .cloned()
+                .collect();
             v.sort_by(|a, b| a.to.cmp(&b.to));
             v
         };
@@ -2137,38 +2493,66 @@ fn compute_diff(
         }
 
         // Parent links
-        let sys_bridge = sys_val.get("bridge").and_then(|v| v.as_str()).map(String::from);
-        let sys_bond = sys_val.get("bond").and_then(|v| v.as_str()).map(String::from);
-        let sys_vrf = sys_val.get("vrf").and_then(|v| v.as_str()).map(String::from);
-        let sys_members: Vec<String> = sys_val.get("interfaces")
+        let sys_bridge = sys_val
+            .get("bridge")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let sys_bond = sys_val
+            .get("bond")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let sys_vrf = sys_val
+            .get("vrf")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+        let sys_members: Vec<String> = sys_val
+            .get("interfaces")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         if sys_bridge != np.bridge {
-            if let Some(b) = &np.bridge { diff.missing_bridge_system = Some(b.clone()); }
-            if let Some(b) = &sys_bridge { diff.missing_bridge_netplan = Some(b.clone()); }
+            if let Some(b) = &np.bridge {
+                diff.missing_bridge_system = Some(b.clone());
+            }
+            if let Some(b) = &sys_bridge {
+                diff.missing_bridge_netplan = Some(b.clone());
+            }
         }
         if sys_bond != np.bond {
-            if let Some(b) = &np.bond { diff.missing_bond_system = Some(b.clone()); }
-            if let Some(b) = &sys_bond { diff.missing_bond_netplan = Some(b.clone()); }
+            if let Some(b) = &np.bond {
+                diff.missing_bond_system = Some(b.clone());
+            }
+            if let Some(b) = &sys_bond {
+                diff.missing_bond_netplan = Some(b.clone());
+            }
         }
         if sys_vrf != np.vrf {
-            if let Some(v) = &np.vrf { diff.missing_vrf_system = Some(v.clone()); }
-            if let Some(v) = &sys_vrf { diff.missing_vrf_netplan = Some(v.clone()); }
+            if let Some(v) = &np.vrf {
+                diff.missing_vrf_system = Some(v.clone());
+            }
+            if let Some(v) = &sys_vrf {
+                diff.missing_vrf_netplan = Some(v.clone());
+            }
         }
 
         // Compute netplan member list from all ifaces that point to this bridge/bond/vrf
-        let np_members: HashSet<String> = netplan_ifaces.values()
+        let np_members: HashSet<String> = netplan_ifaces
+            .values()
             .filter(|ni| {
                 ni.bridge.as_deref() == Some(ifname)
-                || ni.bond.as_deref() == Some(ifname)
-                || ni.vrf.as_deref() == Some(ifname)
+                    || ni.bond.as_deref() == Some(ifname)
+                    || ni.vrf.as_deref() == Some(ifname)
             })
             .map(|ni| ni.id.clone())
             .collect();
         let sys_members_set: HashSet<String> = sys_members.into_iter().collect();
-        if sys_members_set != np_members && (!sys_members_set.is_empty() || !np_members.is_empty()) {
+        if sys_members_set != np_members && (!sys_members_set.is_empty() || !np_members.is_empty())
+        {
             let missing_sys: Vec<String> = {
                 let mut v: Vec<String> = np_members.difference(&sys_members_set).cloned().collect();
                 v.sort();
@@ -2194,19 +2578,75 @@ fn compute_diff(
 const PAD_DIFF: usize = 20;
 
 // ANSI color helpers — no-ops when use_color is false
-fn ansi(s: &str, code: u8) -> String { format!("\x1b[{}m{}\x1b[0m", code, s) }
-fn ansi2(s: &str, c1: u8, c2: u8) -> String { format!("\x1b[{};{}m{}\x1b[0m", c1, c2, s) }
-fn c_green(s: &str, on: bool)       -> String { if on { ansi(s, 32) }      else { s.to_string() } }
-fn c_red(s: &str, on: bool)         -> String { if on { ansi(s, 31) }      else { s.to_string() } }
-fn c_yellow(s: &str, on: bool)      -> String { if on { ansi(s, 33) }      else { s.to_string() } }
-fn c_dim(s: &str, on: bool)         -> String { if on { ansi(s, 2) }       else { s.to_string() } }
-fn c_bold(s: &str, on: bool)        -> String { if on { ansi(s, 1) }       else { s.to_string() } }
-fn c_bold_green(s: &str, on: bool)  -> String { if on { ansi2(s, 1, 32) }  else { s.to_string() } }
-fn c_bold_red(s: &str, on: bool)    -> String { if on { ansi2(s, 1, 31) }  else { s.to_string() } }
-fn c_bold_yellow(s: &str, on: bool) -> String { if on { ansi2(s, 1, 33) }  else { s.to_string() } }
+fn ansi(s: &str, code: u8) -> String {
+    format!("\x1b[{}m{}\x1b[0m", code, s)
+}
+fn ansi2(s: &str, c1: u8, c2: u8) -> String {
+    format!("\x1b[{};{}m{}\x1b[0m", c1, c2, s)
+}
+fn c_green(s: &str, on: bool) -> String {
+    if on {
+        ansi(s, 32)
+    } else {
+        s.to_string()
+    }
+}
+fn c_red(s: &str, on: bool) -> String {
+    if on {
+        ansi(s, 31)
+    } else {
+        s.to_string()
+    }
+}
+fn c_yellow(s: &str, on: bool) -> String {
+    if on {
+        ansi(s, 33)
+    } else {
+        s.to_string()
+    }
+}
+fn c_dim(s: &str, on: bool) -> String {
+    if on {
+        ansi(s, 2)
+    } else {
+        s.to_string()
+    }
+}
+fn c_bold(s: &str, on: bool) -> String {
+    if on {
+        ansi(s, 1)
+    } else {
+        s.to_string()
+    }
+}
+fn c_bold_green(s: &str, on: bool) -> String {
+    if on {
+        ansi2(s, 1, 32)
+    } else {
+        s.to_string()
+    }
+}
+fn c_bold_red(s: &str, on: bool) -> String {
+    if on {
+        ansi2(s, 1, 31)
+    } else {
+        s.to_string()
+    }
+}
+fn c_bold_yellow(s: &str, on: bool) -> String {
+    if on {
+        ansi2(s, 1, 33)
+    } else {
+        s.to_string()
+    }
+}
 
-fn sign_plus(on: bool)  -> String { c_green("+", on) }
-fn sign_minus(on: bool) -> String { c_red("-", on) }
+fn sign_plus(on: bool) -> String {
+    c_green("+", on)
+}
+fn sign_minus(on: bool) -> String {
+    c_red("-", on)
+}
 
 // sign is already a rendered string (possibly ANSI-colored)
 fn plined(sign: &str, title: &str, value: &str) {
@@ -2215,23 +2655,35 @@ fn plined(sign: &str, title: &str, value: &str) {
 
 fn format_route_str_diff(dr: &DiffRoute, verbose: bool) -> String {
     let mut s = dr.to.clone();
-    if !dr.via.is_empty() { s.push_str(&format!(" via {}", dr.via)); }
-    if !dr.from_addr.is_empty() { s.push_str(&format!(" from {}", dr.from_addr)); }
-    if let Some(m) = dr.metric { s.push_str(&format!(" metric {}", m)); }
+    if !dr.via.is_empty() {
+        s.push_str(&format!(" via {}", dr.via));
+    }
+    if !dr.from_addr.is_empty() {
+        s.push_str(&format!(" from {}", dr.from_addr));
+    }
+    if let Some(m) = dr.metric {
+        s.push_str(&format!(" metric {}", m));
+    }
     if verbose {
         let table_name = match dr.table {
             Some(254) | None => "main".to_string(),
             Some(255) => "local".to_string(),
             Some(253) => "default".to_string(),
-            Some(0)   => "unspec".to_string(),
-            Some(n)   => n.to_string(),
+            Some(0) => "unspec".to_string(),
+            Some(n) => n.to_string(),
         };
         s.push_str(&format!(" table {}", table_name));
     }
     let mut extra = vec![];
-    if !dr.protocol.is_empty() && dr.protocol != "kernel" { extra.push(dr.protocol.as_str()); }
-    if !dr.scope.is_empty() && dr.scope != "global" { extra.push(dr.scope.as_str()); }
-    if !dr.route_type.is_empty() && dr.route_type != "unicast" { extra.push(dr.route_type.as_str()); }
+    if !dr.protocol.is_empty() && dr.protocol != "kernel" {
+        extra.push(dr.protocol.as_str());
+    }
+    if !dr.scope.is_empty() && dr.scope != "global" {
+        extra.push(dr.scope.as_str());
+    }
+    if !dr.route_type.is_empty() && dr.route_type != "unicast" {
+        extra.push(dr.route_type.as_str());
+    }
     if extra.is_empty() {
         s
     } else {
@@ -2250,7 +2702,8 @@ fn pretty_print_diff(
     let use_color = std::io::stdout().is_terminal();
 
     // Sort all system interfaces by index — single pass preserves index order
-    let mut all_ifaces: Vec<(&str, u64, &Value)> = state.iter()
+    let mut all_ifaces: Vec<(&str, u64, &Value)> = state
+        .iter()
         .filter(|(k, _)| *k != "netplan-global-state")
         .filter_map(|(k, v)| {
             let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0);
@@ -2260,7 +2713,11 @@ fn pretty_print_diff(
     all_ifaces.sort_by_key(|(_, idx, _)| *idx);
 
     let iface_has_diff = |ifname: &str| -> bool {
-        if report.missing_interfaces_netplan.iter().any(|(n, _, _)| n == ifname) {
+        if report
+            .missing_interfaces_netplan
+            .iter()
+            .any(|(n, _, _)| n == ifname)
+        {
             return true;
         }
         if let Some((_, d)) = report.interfaces.get(ifname) {
@@ -2294,7 +2751,9 @@ fn pretty_print_diff(
     // Single loop over all system interfaces in index order
     for (ifname, idx, ifval) in &all_ifaces {
         if let Some(filter) = ifname_filter {
-            if *ifname != filter { continue; }
+            if *ifname != filter {
+                continue;
+            }
         }
 
         let obj = match ifval.as_object() {
@@ -2302,13 +2761,19 @@ fn pretty_print_diff(
             None => continue,
         };
 
-        let is_missing_netplan = report.missing_interfaces_netplan.iter()
+        let is_missing_netplan = report
+            .missing_interfaces_netplan
+            .iter()
             .any(|(n, _, _)| n == *ifname);
 
         let has_diff = is_missing_netplan || iface_has_diff(ifname);
-        if diff_only && !has_diff { continue; }
+        if diff_only && !has_diff {
+            continue;
+        }
 
-        if last_had_content { println!(); }
+        if last_had_content {
+            println!();
+        }
 
         if is_missing_netplan {
             // System-only: show with '+', all content in green
@@ -2326,26 +2791,57 @@ fn pretty_print_diff(
             display_diff_header_colored(sign, ifname, *idx, obj, use_color, false);
 
             let missing_mac_sys = diff_opt.and_then(|d| d.missing_macaddress_system.as_deref());
-            let missing_mac_np  = diff_opt.and_then(|d| d.missing_macaddress_netplan.as_deref());
+            let missing_mac_np = diff_opt.and_then(|d| d.missing_macaddress_netplan.as_deref());
             display_diff_mac(obj, missing_mac_sys, missing_mac_np, use_color, false);
 
-            let missing_addrs_sys = diff_opt.map(|d| d.missing_addresses_system.as_slice()).unwrap_or(&[]);
-            let missing_addrs_np  = diff_opt.map(|d| d.missing_addresses_netplan.as_slice()).unwrap_or(&[]);
+            let missing_addrs_sys = diff_opt
+                .map(|d| d.missing_addresses_system.as_slice())
+                .unwrap_or(&[]);
+            let missing_addrs_np = diff_opt
+                .map(|d| d.missing_addresses_netplan.as_slice())
+                .unwrap_or(&[]);
             let dhcp4_missing = diff_opt.map(|d| d.missing_dhcp4_address).unwrap_or(false);
             let dhcp6_missing = diff_opt.map(|d| d.missing_dhcp6_address).unwrap_or(false);
-            display_diff_addresses(obj, missing_addrs_sys, missing_addrs_np, dhcp4_missing, dhcp6_missing, use_color, false);
+            display_diff_addresses(
+                obj,
+                missing_addrs_sys,
+                missing_addrs_np,
+                dhcp4_missing,
+                dhcp6_missing,
+                use_color,
+                false,
+            );
 
-            let missing_ns_sys  = diff_opt.map(|d| d.missing_nameservers_system.as_slice()).unwrap_or(&[]);
-            let missing_ns_np   = diff_opt.map(|d| d.missing_nameservers_netplan.as_slice()).unwrap_or(&[]);
+            let missing_ns_sys = diff_opt
+                .map(|d| d.missing_nameservers_system.as_slice())
+                .unwrap_or(&[]);
+            let missing_ns_np = diff_opt
+                .map(|d| d.missing_nameservers_netplan.as_slice())
+                .unwrap_or(&[]);
             display_diff_dns_addresses(obj, missing_ns_sys, missing_ns_np, use_color, false);
 
-            let missing_srch_sys = diff_opt.map(|d| d.missing_search_system.as_slice()).unwrap_or(&[]);
-            let missing_srch_np  = diff_opt.map(|d| d.missing_search_netplan.as_slice()).unwrap_or(&[]);
+            let missing_srch_sys = diff_opt
+                .map(|d| d.missing_search_system.as_slice())
+                .unwrap_or(&[]);
+            let missing_srch_np = diff_opt
+                .map(|d| d.missing_search_netplan.as_slice())
+                .unwrap_or(&[]);
             display_diff_dns_search(obj, missing_srch_sys, missing_srch_np, use_color, false);
 
-            let missing_routes_sys = diff_opt.map(|d| d.missing_routes_system.as_slice()).unwrap_or(&[]);
-            let missing_routes_np  = diff_opt.map(|d| d.missing_routes_netplan.as_slice()).unwrap_or(&[]);
-            display_diff_routes(obj, verbose, missing_routes_sys, missing_routes_np, use_color, false);
+            let missing_routes_sys = diff_opt
+                .map(|d| d.missing_routes_system.as_slice())
+                .unwrap_or(&[]);
+            let missing_routes_np = diff_opt
+                .map(|d| d.missing_routes_netplan.as_slice())
+                .unwrap_or(&[]);
+            display_diff_routes(
+                obj,
+                verbose,
+                missing_routes_sys,
+                missing_routes_np,
+                use_color,
+                false,
+            );
 
             display_diff_plain_links(obj, use_color, false);
         }
@@ -2357,9 +2853,13 @@ fn pretty_print_diff(
     // Netplan-only interfaces (missing in system) shown with '-' at the end
     for (id, itype) in &report.missing_interfaces_system {
         if let Some(filter) = ifname_filter {
-            if id != filter { continue; }
+            if id != filter {
+                continue;
+            }
         }
-        if last_had_content { println!(); }
+        if last_had_content {
+            println!();
+        }
         let body = format!("●     {} {}", id, itype);
         println!("{} {}", sign_minus(use_color), c_red(&body, use_color));
         printed_any = true;
@@ -2368,8 +2868,10 @@ fn pretty_print_diff(
 
     if printed_any && !diff_only {
         println!();
-        let hint = format!("Use {} to omit the information that is consistent between the system and Netplan.",
-            c_yellow("\"--diff-only\"", use_color));
+        let hint = format!(
+            "Use {} to omit the information that is consistent between the system and Netplan.",
+            c_yellow("\"--diff-only\"", use_color)
+        );
         println!("{}", hint);
     }
 }
@@ -2382,8 +2884,14 @@ fn display_diff_header_colored(
     use_color: bool,
     is_plus: bool,
 ) {
-    let operstate = obj.get("operstate").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
-    let adminstate = obj.get("adminstate").and_then(|v| v.as_str()).unwrap_or("UNKNOWN");
+    let operstate = obj
+        .get("operstate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN");
+    let adminstate = obj
+        .get("adminstate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("UNKNOWN");
     let state = if operstate == "UP" && adminstate == "UP" {
         "UP".to_string()
     } else if operstate == "DOWN" && adminstate == "DOWN" {
@@ -2397,21 +2905,35 @@ fn display_diff_header_colored(
         let ssid = obj.get("ssid").and_then(|v| v.as_str());
         let tunnel_mode = obj.get("tunnel_mode").and_then(|v| v.as_str());
         if t == "wifi" {
-            if let Some(s) = ssid { format!("{}/\"{}\"", t, s) } else { t.to_string() }
+            if let Some(s) = ssid {
+                format!("{}/\"{}\"", t, s)
+            } else {
+                t.to_string()
+            }
         } else if t == "tunnel" {
-            if let Some(m) = tunnel_mode { format!("{}/{}", t, m) } else { t.to_string() }
+            if let Some(m) = tunnel_mode {
+                format!("{}/{}", t, m)
+            } else {
+                t.to_string()
+            }
         } else {
             t.to_string()
         }
     };
 
-    let backend = obj.get("backend").and_then(|v| v.as_str()).unwrap_or("unmanaged");
+    let backend = obj
+        .get("backend")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unmanaged");
     let netdef = match obj.get("id").and_then(|v| v.as_str()) {
         Some(id) => format!("{}: {}", backend, id),
         None => backend.to_string(),
     };
 
-    let body = format!("● {:>2}: {} {} {} ({})", idx, ifname, full_type, state, netdef);
+    let body = format!(
+        "● {:>2}: {} {} {} ({})",
+        idx, ifname, full_type, state, netdef
+    );
     let colored_body = if is_plus {
         c_green(&body, use_color)
     } else {
@@ -2430,22 +2952,38 @@ fn display_diff_mac(
     let mac = obj.get("macaddress").and_then(|v| v.as_str());
     let vendor = obj.get("vendor").and_then(|v| v.as_str());
     let vendor_str = |m: &str| -> String {
-        if let Some(v) = vendor { format!("{} ({})", m, v) } else { m.to_string() }
+        if let Some(v) = vendor {
+            format!("{} ({})", m, v)
+        } else {
+            m.to_string()
+        }
     };
 
     if missing_sys.is_none() && missing_np.is_none() {
         if let Some(mac) = mac {
-            plined(&" ".to_string(), "MAC Address:", &c_dim(&vendor_str(mac), use_color));
+            plined(
+                &" ".to_string(),
+                "MAC Address:",
+                &c_dim(&vendor_str(mac), use_color),
+            );
         }
         return;
     }
 
     // Has diff — show existing mac with '+', missing mac with '-'
     if let Some(mac) = mac {
-        plined(&sign_plus(use_color), "MAC Address:", &c_green(&vendor_str(mac), use_color));
+        plined(
+            &sign_plus(use_color),
+            "MAC Address:",
+            &c_green(&vendor_str(mac), use_color),
+        );
     }
     if let Some(missing) = missing_np {
-        plined(&sign_minus(use_color), "", &c_red(&vendor_str(missing), use_color));
+        plined(
+            &sign_minus(use_color),
+            "",
+            &c_red(&vendor_str(missing), use_color),
+        );
     }
 }
 
@@ -2466,13 +3004,21 @@ fn display_diff_addresses(
     let missing_np_set: HashSet<&str> = missing_np.iter().map(String::as_str).collect();
 
     let mut first = true;
-    let mut title = || { if first { first = false; "Addresses:" } else { "" } };
+    let mut title = || {
+        if first {
+            first = false;
+            "Addresses:"
+        } else {
+            ""
+        }
+    };
 
     for entry in addrs_slice {
         if let Some(map) = entry.as_object() {
             if let Some((ip, extra)) = map.iter().next() {
                 let prefix = extra.get("prefix").and_then(|v| v.as_u64()).unwrap_or(0);
-                let flags: Vec<&str> = extra.get("flags")
+                let flags: Vec<&str> = extra
+                    .get("flags")
                     .and_then(|v| v.as_array())
                     .map(|a| a.iter().filter_map(|v| v.as_str()).collect())
                     .unwrap_or_default();
@@ -2499,10 +3045,18 @@ fn display_diff_addresses(
     }
     // DHCP configured but no DHCP address obtained → '-'
     if dhcp4_missing {
-        plined(&sign_minus(use_color), title(), &c_red("0.0.0.0/0 (dhcp)", use_color));
+        plined(
+            &sign_minus(use_color),
+            title(),
+            &c_red("0.0.0.0/0 (dhcp)", use_color),
+        );
     }
     if dhcp6_missing {
-        plined(&sign_minus(use_color), title(), &c_red("::/0 (dhcp)", use_color));
+        plined(
+            &sign_minus(use_color),
+            title(),
+            &c_red("::/0 (dhcp)", use_color),
+        );
     }
 }
 
@@ -2519,7 +3073,14 @@ fn display_diff_dns_addresses(
     // missing_np: in system, not netplan → '+' inline; missing_sys: in netplan, not system → '-'
     let missing_np_set: HashSet<&str> = missing_np.iter().map(String::as_str).collect();
     let mut first = true;
-    let mut title = || if first { first = false; "DNS Addresses:" } else { "" };
+    let mut title = || {
+        if first {
+            first = false;
+            "DNS Addresses:"
+        } else {
+            ""
+        }
+    };
     for addr in addrs {
         if let Some(s) = addr.as_str() {
             let is_extra = missing_np_set.contains(s);
@@ -2549,7 +3110,14 @@ fn display_diff_dns_search(
     // missing_np: in system, not netplan → '+' inline; missing_sys: in netplan, not system → '-'
     let missing_np_set: HashSet<&str> = missing_np.iter().map(String::as_str).collect();
     let mut first = true;
-    let mut title = || if first { first = false; "DNS Search:" } else { "" };
+    let mut title = || {
+        if first {
+            first = false;
+            "DNS Search:"
+        } else {
+            ""
+        }
+    };
     for s in search {
         if let Some(domain) = s.as_str() {
             let is_extra = missing_np_set.contains(domain);
@@ -2581,25 +3149,42 @@ fn display_diff_routes(
     let title = |n: usize| if n == 0 { "Routes:" } else { "" };
 
     for route in routes {
-        let r = match route.as_object() { Some(r) => r, None => continue };
+        let r = match route.as_object() {
+            Some(r) => r,
+            None => continue,
+        };
         let table_id = r.get("table").and_then(|v| v.as_str()).unwrap_or("main");
         if !verbose {
             let is_main = table_id == "main" || table_id == "254";
-            if !is_main { continue; }
+            if !is_main {
+                continue;
+            }
         }
         let route_str = format_route_for_display(r, verbose);
-        plined(&" ".to_string(), title(displayed), &c_dim(&route_str, use_color));
+        plined(
+            &" ".to_string(),
+            title(displayed),
+            &c_dim(&route_str, use_color),
+        );
         displayed += 1;
     }
     // missing_np: in system, not netplan → '+'; missing_sys: in netplan, not system → '-'
     for dr in missing_np {
         let s = format_route_str_diff(dr, verbose);
-        plined(&sign_plus(use_color), title(displayed), &c_green(&s, use_color));
+        plined(
+            &sign_plus(use_color),
+            title(displayed),
+            &c_green(&s, use_color),
+        );
         displayed += 1;
     }
     for dr in missing_sys {
         let s = format_route_str_diff(dr, verbose);
-        plined(&sign_minus(use_color), title(displayed), &c_red(&s, use_color));
+        plined(
+            &sign_minus(use_color),
+            title(displayed),
+            &c_red(&s, use_color),
+        );
         displayed += 1;
     }
 }
@@ -2619,7 +3204,11 @@ fn display_diff_plain_links(obj: &Map<String, Value>, use_color: bool, _all_gree
     if let Some(members) = members.filter(|m| !m.is_empty()) {
         for (i, m) in members.iter().enumerate() {
             if let Some(name) = m.as_str() {
-                plined(sign, if i == 0 { "Interfaces:" } else { "" }, &c_dim(name, use_color));
+                plined(
+                    sign,
+                    if i == 0 { "Interfaces:" } else { "" },
+                    &c_dim(name, use_color),
+                );
             }
         }
     }
@@ -2636,15 +3225,29 @@ fn format_route_for_display(r: &Map<String, Value>, verbose: bool) -> String {
     let table_id = r.get("table").and_then(|v| v.as_str()).unwrap_or("main");
 
     let mut route_str = to.to_string();
-    if !via.is_empty() { route_str.push_str(&format!(" via {}", via)); }
-    if !from.is_empty() { route_str.push_str(&format!(" from {}", from)); }
-    if let Some(m) = metric { route_str.push_str(&format!(" metric {}", m)); }
-    if verbose { route_str.push_str(&format!(" table {}", table_id)); }
+    if !via.is_empty() {
+        route_str.push_str(&format!(" via {}", via));
+    }
+    if !from.is_empty() {
+        route_str.push_str(&format!(" from {}", from));
+    }
+    if let Some(m) = metric {
+        route_str.push_str(&format!(" metric {}", m));
+    }
+    if verbose {
+        route_str.push_str(&format!(" table {}", table_id));
+    }
 
     let mut extra = vec![];
-    if !protocol.is_empty() && protocol != "kernel" { extra.push(protocol); }
-    if !scope.is_empty() && scope != "global" { extra.push(scope); }
-    if !rtype.is_empty() && rtype != "unicast" { extra.push(rtype); }
+    if !protocol.is_empty() && protocol != "kernel" {
+        extra.push(protocol);
+    }
+    if !scope.is_empty() && scope != "global" {
+        extra.push(scope);
+    }
+    if !rtype.is_empty() && rtype != "unicast" {
+        extra.push(rtype);
+    }
 
     if extra.is_empty() {
         route_str
@@ -2674,14 +3277,26 @@ fn diff_to_json(report: &DiffReport) -> Value {
             sys_state.insert("missing_dhcp6_address".into(), Value::Bool(true));
         }
         if !diff.missing_addresses_system.is_empty() {
-            sys_state.insert("missing_addresses".into(), Value::Array(
-                diff.missing_addresses_system.iter().map(|s| Value::String(s.clone())).collect()
-            ));
+            sys_state.insert(
+                "missing_addresses".into(),
+                Value::Array(
+                    diff.missing_addresses_system
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
         }
         if !diff.missing_addresses_netplan.is_empty() {
-            np_state.insert("missing_addresses".into(), Value::Array(
-                diff.missing_addresses_netplan.iter().map(|s| Value::String(s.clone())).collect()
-            ));
+            np_state.insert(
+                "missing_addresses".into(),
+                Value::Array(
+                    diff.missing_addresses_netplan
+                        .iter()
+                        .map(|s| Value::String(s.clone()))
+                        .collect(),
+                ),
+            );
         }
         if let Some(mac) = &diff.missing_macaddress_system {
             sys_state.insert("missing_macaddress".into(), Value::String(mac.clone()));
@@ -2690,14 +3305,16 @@ fn diff_to_json(report: &DiffReport) -> Value {
             np_state.insert("missing_macaddress".into(), Value::String(mac.clone()));
         }
         if !diff.missing_routes_system.is_empty() {
-            sys_state.insert("missing_routes".into(), Value::Array(
-                diff.missing_routes_system.iter().map(dr_to_json).collect()
-            ));
+            sys_state.insert(
+                "missing_routes".into(),
+                Value::Array(diff.missing_routes_system.iter().map(dr_to_json).collect()),
+            );
         }
         if !diff.missing_routes_netplan.is_empty() {
-            np_state.insert("missing_routes".into(), Value::Array(
-                diff.missing_routes_netplan.iter().map(dr_to_json).collect()
-            ));
+            np_state.insert(
+                "missing_routes".into(),
+                Value::Array(diff.missing_routes_netplan.iter().map(dr_to_json).collect()),
+            );
         }
 
         obj.insert("system_state".into(), Value::Object(sys_state));
@@ -2713,7 +3330,10 @@ fn diff_to_json(report: &DiffReport) -> Value {
         m.insert("type".into(), Value::String(itype.clone()));
         missing_sys.insert(id.clone(), Value::Object(m));
     }
-    root.insert("missing_interfaces_system".into(), Value::Object(missing_sys));
+    root.insert(
+        "missing_interfaces_system".into(),
+        Value::Object(missing_sys),
+    );
 
     let mut missing_np = Map::new();
     for (name, idx, itype) in &report.missing_interfaces_netplan {
@@ -2722,7 +3342,10 @@ fn diff_to_json(report: &DiffReport) -> Value {
         m.insert("index".into(), Value::Number((*idx).into()));
         missing_np.insert(name.clone(), Value::Object(m));
     }
-    root.insert("missing_interfaces_netplan".into(), Value::Object(missing_np));
+    root.insert(
+        "missing_interfaces_netplan".into(),
+        Value::Object(missing_np),
+    );
 
     Value::Object(root)
 }
@@ -2730,13 +3353,27 @@ fn diff_to_json(report: &DiffReport) -> Value {
 fn dr_to_json(dr: &DiffRoute) -> Value {
     let mut m = Map::new();
     m.insert("to".into(), Value::String(dr.to.clone()));
-    if !dr.via.is_empty() { m.insert("via".into(), Value::String(dr.via.clone())); }
-    if !dr.from_addr.is_empty() { m.insert("from".into(), Value::String(dr.from_addr.clone())); }
-    if let Some(metric) = dr.metric { m.insert("metric".into(), Value::Number(metric.into())); }
-    if let Some(table) = dr.table { m.insert("table".into(), Value::Number(table.into())); }
-    if !dr.scope.is_empty() { m.insert("scope".into(), Value::String(dr.scope.clone())); }
-    if !dr.route_type.is_empty() { m.insert("type".into(), Value::String(dr.route_type.clone())); }
-    if !dr.protocol.is_empty() { m.insert("protocol".into(), Value::String(dr.protocol.clone())); }
+    if !dr.via.is_empty() {
+        m.insert("via".into(), Value::String(dr.via.clone()));
+    }
+    if !dr.from_addr.is_empty() {
+        m.insert("from".into(), Value::String(dr.from_addr.clone()));
+    }
+    if let Some(metric) = dr.metric {
+        m.insert("metric".into(), Value::Number(metric.into()));
+    }
+    if let Some(table) = dr.table {
+        m.insert("table".into(), Value::Number(table.into()));
+    }
+    if !dr.scope.is_empty() {
+        m.insert("scope".into(), Value::String(dr.scope.clone()));
+    }
+    if !dr.route_type.is_empty() {
+        m.insert("type".into(), Value::String(dr.route_type.clone()));
+    }
+    if !dr.protocol.is_empty() {
+        m.insert("protocol".into(), Value::String(dr.protocol.clone()));
+    }
     m.insert("family".into(), Value::Number(dr.family.into()));
     Value::Object(m)
 }
@@ -2760,8 +3397,19 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let (dns_addresses, dns_search) = query_resolved();
 
     // Build interface list
-    let mut ifaces: Vec<IfaceData> = iproute2.iter()
-        .map(|ip| build_iface(ip, &networkd, &nm_data, &dns_addresses, &dns_search, &routes4, &routes6))
+    let mut ifaces: Vec<IfaceData> = iproute2
+        .iter()
+        .map(|ip| {
+            build_iface(
+                ip,
+                &networkd,
+                &nm_data,
+                &dns_addresses,
+                &dns_search,
+                &routes4,
+                &routes6,
+            )
+        })
         .collect();
 
     correlate_members_and_uplinks(&mut ifaces);
@@ -2785,7 +3433,10 @@ pub fn run(args: StatusArgs) -> Result<()> {
 
     let mut global = Map::new();
     global.insert("online".into(), Value::Bool(online));
-    global.insert("nameservers".into(), Value::Object(resolvconf_json(&args.root_dir)));
+    global.insert(
+        "nameservers".into(),
+        Value::Object(resolvconf_json(&args.root_dir)),
+    );
     state.insert("netplan-global-state".into(), Value::Object(global));
 
     let iter: Box<dyn Iterator<Item = &IfaceData>> = if show_all {
@@ -2819,7 +3470,13 @@ pub fn run(args: StatusArgs) -> Result<()> {
                 }
             }
             _ => {
-                pretty_print_diff(&state, &report, args.verbose, args.diff_only, args.ifname.as_deref());
+                pretty_print_diff(
+                    &state,
+                    &report,
+                    args.verbose,
+                    args.diff_only,
+                    args.ifname.as_deref(),
+                );
             }
         }
     } else {
