@@ -10,7 +10,7 @@ use std::os::unix::io::AsRawFd;
 use anyhow::{bail, Context, Result};
 use clap::Args;
 
-use crate::netplan;
+use crate::{netplan, utils};
 
 const FALLBACK_FILENAME: &str = "70-netplan-set.yaml";
 
@@ -54,7 +54,7 @@ pub fn run(args: SetArgs) -> Result<()> {
     };
 
     // Split the key path (respecting escaped dots)
-    let yaml_path = split_dotted_path(&key);
+    let yaml_path = utils::split_dotted_path(&key);
 
     // ── Build the YAML patch ──────────────────────────────────────────────────
     // Returns a seekable memfd containing the patch document.
@@ -117,30 +117,4 @@ pub fn run(args: SetArgs) -> Result<()> {
     }
 
     Ok(())
-}
-
-/// Split a dotted path string into components.
-/// `\.` is treated as a literal dot (not a separator).
-///
-/// Equivalent to Python:
-/// `[s.replace(r'\.', '.') for s in re.split(r'(?<!\\)\.', key)]`
-fn split_dotted_path(key: &str) -> Vec<String> {
-    let mut parts = Vec::new();
-    let mut current = String::new();
-    let mut chars = key.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        match c {
-            '\\' if chars.peek() == Some(&'.') => {
-                chars.next();
-                current.push('.');
-            }
-            '.' => {
-                parts.push(std::mem::take(&mut current));
-            }
-            _ => current.push(c),
-        }
-    }
-    parts.push(current);
-    parts
 }

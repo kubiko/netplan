@@ -53,7 +53,8 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
     // ── SNAP environment: delegate to D-Bus ──────────────────────────────────
     if std::env::var("SNAP").is_ok() {
-        let busctl = which("busctl")?;
+        let busctl =
+            utils::which("busctl").ok_or_else(|| anyhow::anyhow!("'busctl' not found in PATH"))?;
         let rc = Command::new(&busctl)
             .args([
                 "call",
@@ -98,7 +99,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
         std::process::exit(1);
     }
 
-    let configure = utils::get_configure_path();
+    let configure = utils::configure_path();
 
     if let Some(ref rd) = args.root_dir {
         // ── Testing / root-dir path: invoke generator binary directly ─────────
@@ -121,7 +122,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
         // Symlink the real generator binary, removing any existing entry first
         // (setUp stubs or broken symlinks from a previous run would block creation)
-        let real_gen = utils::get_generator_path();
+        let real_gen = utils::generator_path();
         let _ = fs::remove_file(&sd_gen);
         if let Err(e) = std::os::unix::fs::symlink(&real_gen, &sd_gen) {
             eprintln!("[netplan] Could not symlink {:?}: {}", sd_gen, e);
@@ -144,7 +145,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
         let rc2 = Command::new(&configure)
             .args(["--root-dir", rd])
             .status()
-            .with_context(|| format!("failed to run configure: {}", configure))?
+            .with_context(|| format!("failed to run configure: {}", configure.display()))?
             .code()
             .unwrap_or(1);
 
@@ -155,11 +156,11 @@ pub fn run(args: GenerateArgs) -> Result<()> {
         std::process::exit(if rc != 0 { rc } else { rc2 });
     } else {
         // ── Normal system path: trigger via daemon-reload ─────────────────────
-        utils::systemctl_daemon_reload()?;
+        utils::systemctl::daemon_reload()?;
 
         let rc = Command::new(&configure)
             .status()
-            .with_context(|| format!("failed to run configure: {}", configure))?
+            .with_context(|| format!("failed to run configure: {}", configure.display()))?
             .code()
             .unwrap_or(1);
 
@@ -214,7 +215,7 @@ fn run_generator_mode(args: GenerateArgs) -> Result<()> {
 
     // Call the real C generator binary.  We derive its path from
     // NETPLAN_CONFIGURE_PATH so we never exec ourselves recursively.
-    let c_generator = utils::get_c_generator_path();
+    let c_generator = utils::c_generator_path();
 
     let mut cmd_args: Vec<String> = vec!["--root-dir".to_string(), rd.to_string()];
     cmd_args.extend(dirs);
@@ -225,7 +226,7 @@ fn run_generator_mode(args: GenerateArgs) -> Result<()> {
     let rc = Command::new(&c_generator)
         .args(&cmd_args)
         .status()
-        .with_context(|| format!("failed to run C generator: {}", c_generator))?
+        .with_context(|| format!("failed to run C generator: {}", c_generator.display()))?
         .code()
         .unwrap_or(1);
 
@@ -261,15 +262,4 @@ fn run_mapping(iface: &str, root_dir: &str) -> Result<()> {
         set_name,
     );
     Ok(())
-}
-
-fn which(name: &str) -> Result<String> {
-    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/snap/bin".to_string());
-    for dir in path.split(':') {
-        let candidate = Path::new(dir).join(name);
-        if candidate.exists() {
-            return Ok(candidate.to_string_lossy().into_owned());
-        }
-    }
-    bail!("'{}' not found in PATH", name)
 }

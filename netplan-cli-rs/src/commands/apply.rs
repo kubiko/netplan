@@ -43,7 +43,8 @@ pub fn run(args: ApplyArgs) -> Result<()> {
 
     // ── SNAP environment: delegate to D-Bus ──────────────────────────────────
     if std::env::var("SNAP").is_ok() {
-        let busctl = which("busctl")?;
+        let busctl =
+            utils::which("busctl").ok_or_else(|| anyhow::anyhow!("'busctl' not found in PATH"))?;
         let rc = Command::new(&busctl)
             .args([
                 "call",
@@ -85,24 +86,24 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     let old_files_nm = !old_nm_glob.is_empty();
 
     // Collect interface names for NM interface detection (pre-generate snapshot)
-    let pre_devices = utils::get_interfaces();
+    let pre_devices = utils::iface::all();
     let pre_names: Vec<String> = pre_devices.iter().map(|(n, _, _)| n.clone()).collect();
-    let mut nm_ifaces: HashSet<String> = utils::nm_interfaces(&old_nm_glob, &pre_names)
+    let mut nm_ifaces: HashSet<String> = utils::nm::interfaces(&old_nm_glob, &pre_names)
         .into_iter()
         .cloned()
         .collect();
 
     // ── Run configure + daemon-reload ─────────────────────────────────────────
-    let configure = utils::get_configure_path();
+    let configure = utils::configure_path();
     let rc = Command::new(&configure)
         .status()
-        .map_err(|e| anyhow::anyhow!("failed to run configure ({}): {}", configure, e))?
+        .map_err(|e| anyhow::anyhow!("failed to run configure ({}): {}", configure.display(), e))?
         .code()
         .unwrap_or(1);
     if rc != 0 {
         std::process::exit(78); // EX_CONFIG
     }
-    utils::systemctl_daemon_reload()?;
+    utils::systemctl::daemon_reload()?;
 
     // ── Re-glob to determine what needs restarting ────────────────────────────
     let restart_networkd_new = !utils::glob_paths("/run/systemd/network/*netplan-*").is_empty();
@@ -118,32 +119,32 @@ pub fn run(args: ApplyArgs) -> Result<()> {
 
     let restart_nm_glob = utils::glob_paths("/run/NetworkManager/system-connections/netplan-*");
     // Accumulate NM ifaces from the post-generate glob (still using pre-stop device list)
-    for iface in utils::nm_interfaces(&restart_nm_glob, &pre_names) {
+    for iface in utils::nm::interfaces(&restart_nm_glob, &pre_names) {
         nm_ifaces.insert(iface.clone());
     }
     let restart_nm = !restart_nm_glob.is_empty() || old_files_nm;
 
     // ── Stop backends that need restarting ────────────────────────────────────
     if restart_networkd {
-        utils::systemctl("stop", &["netplan-wpa-*.service"], false);
+        utils::systemctl::run("stop", &["netplan-wpa-*.service"], false);
     }
 
     let mut loopback_connection = String::new();
-    if restart_nm && utils::nm_running() {
+    if restart_nm && utils::nm::running() {
         if nm_ifaces.contains("lo") {
-            loopback_connection = utils::nm_get_connection_for_interface("lo");
+            loopback_connection = utils::nm::connection_for_interface("lo");
         }
         // Disconnect NM-managed interfaces before stopping NM
         for name in &pre_names {
             if nm_ifaces.contains(name.as_str()) {
-                utils::nmcli(&["device", "disconnect", name]);
+                utils::nm::run(&["device", "disconnect", name]);
             }
         }
-        utils::systemctl_network_manager("stop", false);
+        utils::systemctl::network_manager("stop", false);
     }
 
     // ── Refresh devices after stops ───────────────────────────────────────────
-    let devices: Vec<(String, String, Option<String>)> = utils::get_interfaces();
+    let devices: Vec<(String, String, Option<String>)> = utils::iface::all();
     let device_names: Vec<String> = devices.iter().map(|(n, _, _)| n.clone()).collect();
 
     // ── Parse current config and process link changes ─────────────────────────
@@ -182,7 +183,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
             .status();
     }
 
-    let devices_after_udev = utils::get_interface_names();
+    let devices_after_udev = utils::iface::names();
 
     // ── Apply interface renames ────────────────────────────────────────────────
     for (iface, new_name) in &changes {
@@ -230,7 +231,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     ))
     .exists()
     {
-        utils::systemctl("start", &["netplan-regdom.service"], false);
+        utils::systemctl::run("start", &["netplan-regdom.service"], false);
     }
 
     // ── (Re)start networkd backend ────────────────────────────────────────────
@@ -243,15 +244,15 @@ pub fn run(args: ApplyArgs) -> Result<()> {
                 .collect();
 
         // networkctl reload/reconfigure; fall back to hard restart if it fails
-        if utils::networkctl_reload().is_err()
-            || utils::networkctl_reconfigure(&utils::networkd_interfaces()).is_err()
+        if utils::networkd::reload().is_err()
+            || utils::networkd::reconfigure(&utils::networkd::managed_interfaces()).is_err()
         {
             eprintln!("[netplan] Falling back to hard restart of systemd-networkd.service");
-            utils::systemctl("restart", &["systemd-networkd.service"], true);
+            utils::systemctl::run("restart", &["systemd-networkd.service"], true);
         }
 
         // 1st: OVS cleanup (synchronous, avoids races)
-        utils::systemctl("start", &[utils::OVS_CLEANUP_SERVICE], true);
+        utils::systemctl::run("start", &[utils::OVS_CLEANUP_SERVICE], true);
 
         // 2nd: WPA + other OVS services (synchronous for oneshot units)
         let start: Vec<&str> = netplan_wpa
@@ -260,26 +261,26 @@ pub fn run(args: ApplyArgs) -> Result<()> {
             .map(String::as_str)
             .collect();
         if !start.is_empty() {
-            utils::systemctl("start", &start, true);
+            utils::systemctl::run("start", &start, true);
         }
     }
 
     // ── (Re)start NetworkManager backend ──────────────────────────────────────
     if restart_nm {
         // Use the refreshed (post-stop) device list for final NM interface detection
-        let nm_ifaces_final: Vec<String> = utils::nm_interfaces(&restart_nm_glob, &device_names)
+        let nm_ifaces_final: Vec<String> = utils::nm::interfaces(&restart_nm_glob, &device_names)
             .into_iter()
             .cloned()
             .collect();
 
         for iface in &nm_ifaces_final {
-            utils::ip_addr_flush(iface);
+            utils::iface::flush_addrs(iface);
         }
 
         // Clear NM runtime state (NM_UNMANAGED udev rules etc.)
         let _ = std::fs::remove_dir_all("/run/NetworkManager/devices");
 
-        utils::systemctl_network_manager("start", false);
+        utils::systemctl::network_manager("start", false);
 
         // If 'lo' was managed by NM, wait for NM to be ready then bring it back
         let nm_ifaces_set: HashSet<&str> = nm_ifaces_final.iter().map(String::as_str).collect();
@@ -437,17 +438,4 @@ fn glob_wants_services(base_dir: &str, file_pat: &str) -> Vec<String> {
         }
     }
     results
-}
-
-// ── which ─────────────────────────────────────────────────────────────────────
-
-fn which(name: &str) -> Result<String> {
-    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/snap/bin".to_string());
-    for dir in path.split(':') {
-        let candidate = Path::new(dir).join(name);
-        if candidate.exists() {
-            return Ok(candidate.to_string_lossy().into_owned());
-        }
-    }
-    bail!("'{}' not found in PATH", name)
 }
