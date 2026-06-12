@@ -40,7 +40,7 @@ pub fn run(args: GetArgs) -> Result<()> {
         // Split on '.' but treat '\.' as a literal dot (negative lookbehind)
         let prefix = utils::split_dotted_path(&key);
 
-        netplan::dump_yaml_subtree(&prefix, &full_yaml)?
+        netplan::dump_yaml_subtree(prefix.iter().map(String::as_str), &full_yaml)?
     };
 
     // Print without a trailing newline, matching Python's `print(state, end='')`

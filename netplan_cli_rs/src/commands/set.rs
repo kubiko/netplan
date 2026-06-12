@@ -5,7 +5,6 @@
 
 use std::io::Seek;
 use std::io::SeekFrom;
-use std::os::unix::io::AsRawFd;
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
@@ -58,8 +57,8 @@ pub fn run(args: SetArgs) -> Result<()> {
 
     // ── Build the YAML patch ──────────────────────────────────────────────────
     // Returns a seekable memfd containing the patch document.
-    let mut patch_file =
-        netplan::create_yaml_patch(&yaml_path, value).context("Failed to create YAML patch")?;
+    let mut patch_file = netplan::create_yaml_patch(yaml_path.iter().map(String::as_str), value)
+        .context("Failed to create YAML patch")?;
 
     // ── First parser: validate the full intended configuration ────────────────
     {
@@ -67,14 +66,14 @@ pub fn run(args: SetArgs) -> Result<()> {
 
         // Tell the parser which fields are to be deleted (value=="NULL")
         patch_file.seek(SeekFrom::Start(0))?;
-        parser.load_nullable_fields(patch_file.as_raw_fd())?;
+        parser.load_nullable_fields(&patch_file)?;
 
         // Load full existing hierarchy
         parser.load_yaml_hierarchy(&args.root_dir)?;
 
         // Apply the patch
         patch_file.seek(SeekFrom::Start(0))?;
-        parser.load_yaml_from_fd(patch_file.as_raw_fd())?;
+        parser.load_yaml_from_fd(&patch_file)?;
 
         // Validate by importing into a state (errors bubble up here)
         let mut state = netplan::State::new()?;
@@ -96,19 +95,19 @@ pub fn run(args: SetArgs) -> Result<()> {
 
         // Nullable fields: ignore these settings when scanning the hierarchy
         patch_file.seek(SeekFrom::Start(0))?;
-        parser_out.load_nullable_fields(patch_file.as_raw_fd())?;
+        parser_out.load_nullable_fields(&patch_file)?;
 
         // Nullable overrides: redirect any netdefs/globals found in the patch
         // to the output file, ignoring their presence in other YAML files
         patch_file.seek(SeekFrom::Start(0))?;
-        parser_out.load_nullable_overrides(patch_file.as_raw_fd(), &filename)?;
+        parser_out.load_nullable_overrides(&patch_file, &filename)?;
 
         // Load the full hierarchy (some netdefs/globals are now overridden)
         parser_out.load_yaml_hierarchy(&args.root_dir)?;
 
         // Apply the patch
         patch_file.seek(SeekFrom::Start(0))?;
-        parser_out.load_yaml_from_fd(patch_file.as_raw_fd())?;
+        parser_out.load_yaml_from_fd(&patch_file)?;
 
         // Import and write to the origin-hint file
         let mut state_out = netplan::State::new()?;

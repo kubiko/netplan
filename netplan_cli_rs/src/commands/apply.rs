@@ -155,12 +155,12 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     if let Some(ref state_dir) = args.state {
         if let Ok(prev_state) = netplan::load_state(state_dir) {
             let prev_links: Vec<String> = prev_state
-                .iter_netdefs()
+                .netdefs()
                 .filter(|nd| nd.is_virtual())
                 .map(|nd| nd.id())
                 .collect();
             let curr_links: Vec<String> = state
-                .iter_netdefs()
+                .netdefs()
                 .filter(|nd| nd.is_virtual())
                 .map(|nd| nd.id())
                 .collect();
@@ -327,7 +327,7 @@ fn process_link_changes(
 ) -> HashMap<String, String> {
     let mut changes = HashMap::new();
 
-    for netdef in state.iter_netdefs() {
+    for netdef in state.netdefs() {
         if !netdef.is_physical() {
             continue;
         }
