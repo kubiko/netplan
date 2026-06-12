@@ -11,7 +11,11 @@ use clap::Args;
 
 use crate::{netplan, utils};
 
-const IF_NAMESIZE: usize = 16;
+const MAX_IF_NAME_SIZE: usize = 16;
+
+/// `busctl call` exit code when the D-Bus call was denied by polkit
+/// (interactive authentication was required but cancelled/unavailable).
+const BUSCTL_EXIT_PERMISSION_DENIED: i32 = 130;
 
 #[derive(Args, Debug)]
 pub struct ApplyArgs {
@@ -31,14 +35,12 @@ pub struct ApplyArgs {
 pub fn run(args: ApplyArgs) -> Result<()> {
     // SR-IOV-only path (stub — not exposed through public libnetplan API)
     if args.sriov_only {
-        eprintln!("[netplan] SR-IOV config apply is not supported in the Rust CLI");
-        return Ok(());
+        bail!("SR-IOV config apply is not supported in the Rust CLI");
     }
 
     // OVS-cleanup-only path (stub)
     if args.only_ovs_cleanup {
-        eprintln!("[netplan] OVS cleanup is not supported in the Rust CLI");
-        return Ok(());
+        bail!("OVS cleanup is not supported in the Rust CLI");
     }
 
     // ── SNAP environment: delegate to D-Bus ──────────────────────────────────
@@ -60,7 +62,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
             .code()
             .unwrap_or(1);
 
-        if rc == 130 {
+        if rc == BUSCTL_EXIT_PERMISSION_DENIED {
             bail!("PermissionError: failed to communicate with dbus service");
         } else if rc != 0 {
             bail!("failed to communicate with dbus service: error {}", rc);
@@ -68,11 +70,10 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         return Ok(());
     }
 
-    let ovs_cleanup_path = format!(
-        "{}{}",
-        utils::GENERATOR_LATE_DIR,
-        utils::OVS_CLEANUP_SERVICE
-    );
+    let ovs_cleanup_path = Path::new(utils::GENERATOR_LATE_DIR)
+        .join(utils::OVS_CLEANUP_SERVICE)
+        .to_string_lossy()
+        .into_owned();
 
     // ── Snapshot pre-generate state ───────────────────────────────────────────
     let old_files_networkd = !utils::glob_paths("/run/systemd/network/*netplan-*").is_empty();
@@ -144,7 +145,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     }
 
     // ── Refresh devices after stops ───────────────────────────────────────────
-    let devices: Vec<(String, String, Option<String>)> = utils::iface::all();
+    let devices = utils::iface::all();
     let device_names: Vec<String> = devices.iter().map(|(n, _, _)| n.clone()).collect();
 
     // ── Parse current config and process link changes ─────────────────────────
@@ -153,6 +154,10 @@ pub fn run(args: ApplyArgs) -> Result<()> {
 
     // ── Delete virtual links removed from config ──────────────────────────────
     if let Some(ref state_dir) = args.state {
+        // Best-effort: `--state` points at a snapshot of the previous config
+        // taken before this apply started. It may be missing or unreadable
+        // (e.g. first-ever apply), in which case there is nothing to compare
+        // against and virtual-link cleanup is simply skipped.
         if let Ok(prev_state) = netplan::load_state(state_dir) {
             let prev_links: Vec<String> = prev_state
                 .netdefs()
@@ -169,6 +174,8 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     }
 
     // ── Trigger .link rules via udevadm ───────────────────────────────────────
+    // udevadm failures are intentionally ignored: this is best-effort, matching
+    // the upstream Python CLI which also discards the exit status here.
     for (dev, _, _) in &devices {
         let syspath = format!("/sys/class/net/{}", dev);
         let _ = Command::new("udevadm")
@@ -186,8 +193,10 @@ pub fn run(args: ApplyArgs) -> Result<()> {
     let devices_after_udev = utils::iface::names();
 
     // ── Apply interface renames ────────────────────────────────────────────────
+    // `ip link set` failures are intentionally ignored: this is best-effort,
+    // matching the upstream Python CLI which also discards the exit status here.
     for (iface, new_name) in &changes {
-        if new_name.len() >= IF_NAMESIZE {
+        if new_name.len() >= MAX_IF_NAME_SIZE {
             eprintln!(
                 "[netplan] Interface name {} is too long; {} will not be renamed",
                 new_name, iface
@@ -225,11 +234,9 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         .status();
 
     // ── Regulatory domain ─────────────────────────────────────────────────────
-    if Path::new(&format!(
-        "{}netplan-regdom.service",
-        utils::GENERATOR_LATE_DIR
-    ))
-    .exists()
+    if Path::new(utils::GENERATOR_LATE_DIR)
+        .join("netplan-regdom.service")
+        .exists()
     {
         utils::systemctl::run("start", &["netplan-regdom.service"], false);
     }
@@ -322,7 +329,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
 /// Find physical interfaces that have a `set-name` + `match:` stanza and
 /// return a map of `current_name -> new_name` for those that need renaming.
 fn process_link_changes(
-    interfaces: &[(String, String, Option<String>)],
+    interfaces: &[(String, Option<String>, Option<String>)],
     state: &netplan::State,
 ) -> HashMap<String, String> {
     let mut changes = HashMap::new();
@@ -360,26 +367,20 @@ fn process_link_changes(
 /// all satisfy `netdef`'s match rules.  Returns `None` when zero or multiple
 /// interfaces match (ambiguous).
 fn find_matching_iface(
-    interfaces: &[(String, String, Option<String>)],
+    interfaces: &[(String, Option<String>, Option<String>)],
     netdef: &netplan::NetDef,
 ) -> Option<String> {
-    let candidates: Vec<&String> = interfaces
+    let candidates: Vec<_> = interfaces
         .iter()
         .filter(|(name, mac, driver)| {
-            let mac_opt = if mac.is_empty() {
-                None
-            } else {
-                Some(mac.as_str())
-            };
-            netdef.matches_interface(name, mac_opt, driver.as_deref())
+            netdef.matches_interface(name, mac.as_deref(), driver.as_deref())
         })
         .map(|(name, _, _)| name)
         .collect();
 
-    if candidates.len() == 1 {
-        Some(candidates[0].clone())
-    } else {
-        None
+    match candidates.as_slice() {
+        [name] => Some((*name).clone()),
+        _ => None,
     }
 }
 
