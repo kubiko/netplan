@@ -8,7 +8,7 @@
 
 use std::fs;
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, ExitCode};
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
@@ -45,7 +45,7 @@ pub struct GenerateArgs {
     generator_dirs: Vec<String>,
 }
 
-pub fn run(args: GenerateArgs) -> Result<()> {
+pub fn run(args: GenerateArgs) -> Result<ExitCode> {
     // ── Systemd generator mode ────────────────────────────────────────────────
     if args.generator_mode {
         return run_generator_mode(args);
@@ -75,7 +75,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
         } else if rc != 0 {
             bail!("failed to communicate with dbus service: error {}", rc);
         }
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
 
     let rootdir = args.root_dir.as_deref().unwrap_or("/");
@@ -96,7 +96,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
              Remove {:?} to force re-run.",
             try_stamp
         );
-        std::process::exit(1);
+        return Ok(ExitCode::from(1));
     }
 
     let configure = utils::configure_path();
@@ -153,7 +153,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
             .args(["control", "--reload"])
             .status();
 
-        std::process::exit(if rc != 0 { rc } else { rc2 });
+        Ok(ExitCode::from((if rc != 0 { rc } else { rc2 }) as u8))
     } else {
         // ── Normal system path: trigger via daemon-reload ─────────────────────
         utils::systemctl::daemon_reload()?;
@@ -172,7 +172,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
             eprintln!("[netplan] Could not call 'udevadm control --reload': {}", e);
         }
 
-        std::process::exit(rc);
+        Ok(ExitCode::from(rc as u8))
     }
 }
 
@@ -183,7 +183,7 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 /// (The `generate --generator-mode` prefix is injected by `main()` before
 /// clap parsing, so by the time we arrive here the generator dirs and any
 /// trailing flags are in `args.generator_dirs`.)
-fn run_generator_mode(args: GenerateArgs) -> Result<()> {
+fn run_generator_mode(args: GenerateArgs) -> Result<ExitCode> {
     let rd = args.root_dir.as_deref().unwrap_or("/");
 
     // Separate directory paths from flags that may follow them.
@@ -196,7 +196,7 @@ fn run_generator_mode(args: GenerateArgs) -> Result<()> {
                 "ignore-errors" => ignore_errors = true,
                 _ => {
                     eprintln!("failed to parse options: Unknown option {}", item);
-                    std::process::exit(1);
+                    return Ok(ExitCode::from(1));
                 }
             }
         } else {
@@ -210,7 +210,7 @@ fn run_generator_mode(args: GenerateArgs) -> Result<()> {
             "{}: can not be called directly as a systemd generator",
             std::env::args().next().unwrap_or_default()
         );
-        std::process::exit(1);
+        return Ok(ExitCode::from(1));
     }
 
     // Call the real C generator binary.  We derive its path from
@@ -230,13 +230,13 @@ fn run_generator_mode(args: GenerateArgs) -> Result<()> {
         .code()
         .unwrap_or(1);
 
-    std::process::exit(rc);
+    Ok(ExitCode::from(rc as u8))
 }
 
 /// Implement `generate --mapping <iface>` using libnetplan instead of shelling
 /// out to the C generator binary.  Mirrors `find_interface()` in generate.c:
 /// matches by netdef id, set-name, or match.name/match rules.
-fn run_mapping(iface: &str, root_dir: &str) -> Result<()> {
+fn run_mapping(iface: &str, root_dir: &str) -> Result<ExitCode> {
     let state = crate::netplan::load_state(root_dir)?;
 
     // Collect all netdefs that match the requested interface name.
@@ -250,7 +250,7 @@ fn run_mapping(iface: &str, root_dir: &str) -> Result<()> {
         .collect();
 
     if matches.len() != 1 {
-        std::process::exit(1);
+        return Ok(ExitCode::from(1));
     }
 
     let nd = &matches[0];
@@ -261,5 +261,5 @@ fn run_mapping(iface: &str, root_dir: &str) -> Result<()> {
         nd.backend_name(),
         set_name,
     );
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }

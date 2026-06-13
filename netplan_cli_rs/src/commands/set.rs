@@ -5,6 +5,7 @@
 
 use std::io::Seek;
 use std::io::SeekFrom;
+use std::process::ExitCode;
 
 use anyhow::{bail, Context, Result};
 use clap::Args;
@@ -29,7 +30,7 @@ pub struct SetArgs {
     root_dir: String,
 }
 
-pub fn run(args: SetArgs) -> Result<()> {
+pub fn run(args: SetArgs) -> Result<ExitCode> {
     // Validate origin-hint is non-empty when provided
     if let Some(ref hint) = args.origin_hint {
         if hint.is_empty() {
@@ -82,7 +83,7 @@ pub fn run(args: SetArgs) -> Result<()> {
         // If no origin-hint, write via update_yaml_hierarchy and done
         if filename.is_none() {
             state.update_yaml_hierarchy(FALLBACK_FILENAME, &args.root_dir)?;
-            return Ok(());
+            return Ok(ExitCode::SUCCESS);
         }
     }
 
@@ -115,5 +116,5 @@ pub fn run(args: SetArgs) -> Result<()> {
         state_out.write_yaml_file(&filename, &args.root_dir)?;
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }

@@ -4,7 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Command, ExitCode, Stdio};
 
 use anyhow::{bail, Result};
 use clap::Args;
@@ -32,7 +32,7 @@ pub struct ApplyArgs {
     state: Option<String>,
 }
 
-pub fn run(args: ApplyArgs) -> Result<()> {
+pub fn run(args: ApplyArgs) -> Result<ExitCode> {
     // SR-IOV-only path (stub — not exposed through public libnetplan API)
     if args.sriov_only {
         bail!("SR-IOV config apply is not supported in the Rust CLI");
@@ -67,7 +67,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         } else if rc != 0 {
             bail!("failed to communicate with dbus service: error {}", rc);
         }
-        return Ok(());
+        return Ok(ExitCode::SUCCESS);
     }
 
     let ovs_cleanup_path = Path::new(utils::GENERATOR_LATE_DIR)
@@ -102,7 +102,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         .code()
         .unwrap_or(1);
     if rc != 0 {
-        std::process::exit(78); // EX_CONFIG
+        return Ok(ExitCode::from(78)); // EX_CONFIG
     }
     utils::systemctl::daemon_reload()?;
 
@@ -321,7 +321,7 @@ pub fn run(args: ApplyArgs) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 // ── process_link_changes ──────────────────────────────────────────────────────

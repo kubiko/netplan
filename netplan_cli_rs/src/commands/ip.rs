@@ -4,7 +4,7 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, ExitCode};
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::{Args, Subcommand};
@@ -35,7 +35,7 @@ pub struct LeasesArgs {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: IpArgs) -> Result<()> {
+pub fn run(args: IpArgs) -> Result<ExitCode> {
     match args.subcommand {
         Some(IpSubcommand::Leases(a)) => run_leases(a),
         None => bail!("Available commands:\n  leases   Display IP leases"),
@@ -44,7 +44,7 @@ pub fn run(args: IpArgs) -> Result<()> {
 
 // ── ip leases ─────────────────────────────────────────────────────────────────
 
-fn run_leases(args: LeasesArgs) -> Result<()> {
+fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
     let iface = &args.interface;
     let root_dir = &args.root_dir;
 
@@ -86,7 +86,7 @@ fn run_leases(args: LeasesArgs) -> Result<()> {
             for line in content.lines() {
                 println!("{line}");
             }
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Err(e) => bail!("No lease found for interface '{iface}': {e}"),
     }
