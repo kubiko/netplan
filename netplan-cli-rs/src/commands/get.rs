@@ -3,6 +3,8 @@
 //! Mirrors `netplan_cli/cli/commands/get.py` and the `NetplanConfigState`
 //! class in `cli/state.py`.
 
+use std::process::ExitCode;
+
 use anyhow::Result;
 use clap::Args;
 
@@ -20,7 +22,7 @@ pub struct GetArgs {
     root_dir: String,
 }
 
-pub fn run(args: GetArgs) -> Result<()> {
+pub fn run(args: GetArgs) -> Result<ExitCode> {
     // Parse the YAML hierarchy and validate
     let state = netplan::load_state(&args.root_dir)?;
 
@@ -45,5 +47,5 @@ pub fn run(args: GetArgs) -> Result<()> {
 
     // Print without a trailing newline, matching Python's `print(state, end='')`
     print!("{}", output);
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }

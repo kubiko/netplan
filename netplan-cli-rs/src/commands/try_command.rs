@@ -10,6 +10,7 @@
 use std::io::{BufRead, Write};
 use std::os::raw::c_int;
 use std::path::Path;
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
@@ -80,7 +81,7 @@ pub struct TryArgs {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: TryArgs) -> Result<()> {
+pub fn run(args: TryArgs) -> Result<ExitCode> {
     let rootdir = std::env::var("DBUS_TEST_NETPLAN_ROOT").unwrap_or_else(|_| "/".to_string());
     let stamp = format!(
         "{}run/netplan/netplan-try.ready",
@@ -90,13 +91,13 @@ pub fn run(args: TryArgs) -> Result<()> {
     // ── Validate config is parseable ──────────────────────────────────────────
     if let Err(e) = crate::netplan::load_state(&rootdir) {
         eprintln!("[netplan] Configuration error: {}", e);
-        std::process::exit(78); // EX_CONFIG
+        return Ok(ExitCode::from(78)); // EX_CONFIG
     }
     if let Some(ref cf) = args.config_file {
         // Validate the extra file too
         if let Err(e) = validate_extra_config(&rootdir, cf) {
             eprintln!("[netplan] Configuration error: {}", e);
-            std::process::exit(78);
+            return Ok(ExitCode::from(78));
         }
     }
 
@@ -150,7 +151,7 @@ pub fn run(args: TryArgs) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 // ── Confirmation wait loop ────────────────────────────────────────────────────

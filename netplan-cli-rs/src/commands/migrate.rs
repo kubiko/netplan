@@ -7,6 +7,7 @@ use std::fmt;
 use std::fs;
 use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::str::FromStr;
 
 use anyhow::{bail, Context, Result};
@@ -69,7 +70,7 @@ struct IfupdownConfig {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: MigrateArgs) -> Result<()> {
+pub fn run(args: MigrateArgs) -> Result<ExitCode> {
     let rootdir = args.root_dir.trim_end_matches('/').to_string();
     let dry_run = args.dry_run;
 
@@ -77,7 +78,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
         Ok(c) => c,
         Err(e) => {
             eprintln!("{e}");
-            std::process::exit(2);
+            return Ok(ExitCode::from(2));
         }
     };
     let IfupdownConfig {
@@ -92,7 +93,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
         for (family, config) in families {
             if !auto_ifaces.contains(iface.as_str()) {
                 eprintln!("{iface}: non-automatic interfaces are not supported");
-                std::process::exit(2);
+                return Ok(ExitCode::from(2));
             }
 
             match config.method {
@@ -105,11 +106,11 @@ pub fn run(args: MigrateArgs) -> Result<()> {
 
                     if let Err(e) = parse_dns_options(&mut opts, c) {
                         eprintln!("{e}");
-                        std::process::exit(2);
+                        return Ok(ExitCode::from(2));
                     }
                     if let Err(e) = parse_hwaddress(iface, &mut opts, c) {
                         eprintln!("{e}");
-                        std::process::exit(2);
+                        return Ok(ExitCode::from(2));
                     }
 
                     if !opts.is_empty() {
@@ -117,7 +118,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
                             "{iface}: option(s) {} are not supported for dhcp method",
                             opts.keys().cloned().collect::<Vec<_>>().join(", ")
                         );
-                        std::process::exit(2);
+                        return Ok(ExitCode::from(2));
                     }
 
                     if *family == AddressFamily::Inet {
@@ -137,53 +138,69 @@ pub fn run(args: MigrateArgs) -> Result<()> {
 
                     if let Err(e) = parse_dns_options(&mut opts, c) {
                         eprintln!("{e}");
-                        std::process::exit(2);
+                        return Ok(ExitCode::from(2));
                     }
                     if let Err(e) = parse_mtu(&base_iface, &mut opts, c) {
                         eprintln!("{e}");
-                        std::process::exit(2);
+                        return Ok(ExitCode::from(2));
                     }
                     if let Err(e) = parse_hwaddress(&base_iface, &mut opts, c) {
                         eprintln!("{e}");
-                        std::process::exit(2);
+                        return Ok(ExitCode::from(2));
                     }
 
                     if *family == AddressFamily::Inet {
                         let supported = ["address", "netmask", "gateway"];
                         let unsupported = ["broadcast", "metric", "pointopoint", "scope"];
-                        check_options(&base_iface, *family, &opts, &supported, &unsupported);
+                        if let Some(code) =
+                            check_options(&base_iface, *family, &opts, &supported, &unsupported)
+                        {
+                            return Ok(code);
+                        }
 
-                        let addr_str = opts.get("address").unwrap_or_else(|| {
-                            eprintln!("{base_iface}: no address supplied in static method");
-                            std::process::exit(2);
-                        });
+                        let addr_str = match opts.get("address") {
+                            Some(a) => a,
+                            None => {
+                                eprintln!("{base_iface}: no address supplied in static method");
+                                return Ok(ExitCode::from(2));
+                            }
+                        };
 
                         let (addr_part, net_spec) = if addr_str.contains('/') {
                             let addr_part = addr_str.split('/').next().unwrap().to_string();
                             (addr_part, addr_str.clone())
                         } else {
-                            let netmask = opts.get("netmask").unwrap_or_else(|| {
-                                eprintln!(
-                                    "{base_iface}: address does not specify prefix length, and netmask not specified"
-                                );
-                                std::process::exit(2);
-                            });
+                            let netmask = match opts.get("netmask") {
+                                Some(n) => n,
+                                None => {
+                                    eprintln!(
+                                        "{base_iface}: address does not specify prefix length, and netmask not specified"
+                                    );
+                                    return Ok(ExitCode::from(2));
+                                }
+                            };
                             (addr_str.clone(), format!("{addr_str}/{netmask}"))
                         };
 
-                        let ipaddr = Ipv4Addr::from_str(&addr_part).unwrap_or_else(|e| {
-                            eprintln!(
-                                "{base_iface}: error parsing \"{addr_part}\" as an IPv4 address: {e}"
-                            );
-                            std::process::exit(2);
-                        });
+                        let ipaddr = match Ipv4Addr::from_str(&addr_part) {
+                            Ok(a) => a,
+                            Err(e) => {
+                                eprintln!(
+                                    "{base_iface}: error parsing \"{addr_part}\" as an IPv4 address: {e}"
+                                );
+                                return Ok(ExitCode::from(2));
+                            }
+                        };
 
-                        let prefix = parse_ipv4_network(&net_spec).unwrap_or_else(|e| {
-                            eprintln!(
-                                "{base_iface}: error parsing \"{net_spec}\" as an IPv4 network: {e}"
-                            );
-                            std::process::exit(2);
-                        });
+                        let prefix = match parse_ipv4_network(&net_spec) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                eprintln!(
+                                    "{base_iface}: error parsing \"{net_spec}\" as an IPv4 network: {e}"
+                                );
+                                return Ok(ExitCode::from(2));
+                            }
+                        };
 
                         c.addresses.push(format!("{ipaddr}/{prefix}"));
 
@@ -203,39 +220,55 @@ pub fn run(args: MigrateArgs) -> Result<()> {
                             "dad-attempts",
                             "dad-interval",
                         ];
-                        check_options(&base_iface, *family, &opts, &supported, &unsupported);
+                        if let Some(code) =
+                            check_options(&base_iface, *family, &opts, &supported, &unsupported)
+                        {
+                            return Ok(code);
+                        }
 
-                        let addr_str = opts.get("address").unwrap_or_else(|| {
-                            eprintln!("{base_iface}: no address supplied in static method");
-                            std::process::exit(2);
-                        });
+                        let addr_str = match opts.get("address") {
+                            Some(a) => a,
+                            None => {
+                                eprintln!("{base_iface}: no address supplied in static method");
+                                return Ok(ExitCode::from(2));
+                            }
+                        };
 
                         let (addr_part, net_spec) = if addr_str.contains('/') {
                             let addr_part = addr_str.split('/').next().unwrap().to_string();
                             (addr_part, addr_str.clone())
                         } else {
-                            let netmask = opts.get("netmask").unwrap_or_else(|| {
-                                eprintln!(
-                                    "{base_iface}: address does not specify prefix length, and netmask not specified"
-                                );
-                                std::process::exit(2);
-                            });
+                            let netmask = match opts.get("netmask") {
+                                Some(n) => n,
+                                None => {
+                                    eprintln!(
+                                        "{base_iface}: address does not specify prefix length, and netmask not specified"
+                                    );
+                                    return Ok(ExitCode::from(2));
+                                }
+                            };
                             (addr_str.clone(), format!("{addr_str}/{netmask}"))
                         };
 
-                        let ipaddr = Ipv6Addr::from_str(&addr_part).unwrap_or_else(|e| {
-                            eprintln!(
-                                "{base_iface}: error parsing \"{addr_part}\" as an IPv6 address: {e}"
-                            );
-                            std::process::exit(2);
-                        });
+                        let ipaddr = match Ipv6Addr::from_str(&addr_part) {
+                            Ok(a) => a,
+                            Err(e) => {
+                                eprintln!(
+                                    "{base_iface}: error parsing \"{addr_part}\" as an IPv6 address: {e}"
+                                );
+                                return Ok(ExitCode::from(2));
+                            }
+                        };
 
-                        let prefix = parse_ipv6_network(&net_spec).unwrap_or_else(|e| {
-                            eprintln!(
-                                "{base_iface}: error parsing \"{net_spec}\" as an IPv6 network: {e}"
-                            );
-                            std::process::exit(2);
-                        });
+                        let prefix = match parse_ipv6_network(&net_spec) {
+                            Ok(p) => p,
+                            Err(e) => {
+                                eprintln!(
+                                    "{base_iface}: error parsing \"{net_spec}\" as an IPv6 network: {e}"
+                                );
+                                return Ok(ExitCode::from(2));
+                            }
+                        };
 
                         c.addresses.push(format!("{ipaddr}/{prefix}"));
 
@@ -249,13 +282,13 @@ pub fn run(args: MigrateArgs) -> Result<()> {
                                 "1" => c.accept_ra = Some(true),
                                 "2" => {
                                     eprintln!("{base_iface}: netplan does not support accept_ra=2");
-                                    std::process::exit(2);
+                                    return Ok(ExitCode::from(2));
                                 }
                                 other => {
                                     eprintln!(
                                         "{base_iface}: unexpected accept_ra value \"{other}\""
                                     );
-                                    std::process::exit(2);
+                                    return Ok(ExitCode::from(2));
                                 }
                             }
                         }
@@ -293,7 +326,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
                         "{} already exists; remove it if you want to run the migration again",
                         dest.display()
                     );
-                    std::process::exit(3);
+                    return Ok(ExitCode::from(3));
                 }
                 Err(e) => {
                     return Err(e).with_context(|| format!("failed to write {dest:?}"));
@@ -315,7 +348,7 @@ pub fn run(args: MigrateArgs) -> Result<()> {
             .with_context(|| format!("failed to rename {if_config:?}"))?;
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 // ── Netplan config structure ──────────────────────────────────────────────────
@@ -391,7 +424,7 @@ fn check_options(
     opts: &HashMap<String, String>,
     supported: &[&str],
     unsupported: &[&str],
-) {
+) -> Option<ExitCode> {
     for key in opts.keys() {
         if !supported.contains(&key.as_str()) {
             if unsupported.contains(&key.as_str()) {
@@ -399,9 +432,10 @@ fn check_options(
             } else {
                 eprintln!("{iface}: unknown {family} option \"{key}\"");
             }
-            std::process::exit(2);
+            return Some(ExitCode::from(2));
         }
     }
+    None
 }
 
 // ── IP address/network helpers ────────────────────────────────────────────────

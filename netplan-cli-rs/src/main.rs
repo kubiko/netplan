@@ -1,6 +1,8 @@
 //! netplan – Rust CLI replacing the Python netplan_cli for the core commands:
 //! apply / generate / get / set / info / ip / try.
 
+use std::process::ExitCode;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
@@ -53,7 +55,7 @@ enum Command {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-fn main() {
+fn main() -> ExitCode {
     env_logger::init();
 
     // Match Python CLI environment setup.
@@ -119,7 +121,7 @@ fn main() {
             if msg.contains("unexpected argument '") {
                 if let Some(arg) = extract_unknown_arg(&msg) {
                     eprintln!("failed to parse options: Unknown option {}", arg);
-                    std::process::exit(1);
+                    return ExitCode::from(1);
                 }
             }
             // All other errors: let clap print its own message and exit.
@@ -136,7 +138,7 @@ fn main() {
         eprintln!("[netplan] debug mode enabled");
     }
 
-    let result: Result<()> = match cli.command {
+    let result: Result<ExitCode> = match cli.command {
         Command::Apply(args) => apply::run(args),
         Command::Generate(args) => generate::run(args),
         Command::Get(args) => get::run(args),
@@ -148,11 +150,14 @@ fn main() {
         Command::Try(args) => try_command::run(args),
     };
 
-    if let Err(e) = result {
-        // {e:?} includes anyhow's full "Caused by" chain, which is more
-        // useful for debugging than the plain Display message.
-        eprintln!("Command failed: {e:?}");
-        std::process::exit(1);
+    match result {
+        Ok(code) => code,
+        Err(e) => {
+            // {e:?} includes anyhow's full "Caused by" chain, which is more
+            // useful for debugging than the plain Display message.
+            eprintln!("Command failed: {e:?}");
+            ExitCode::from(1)
+        }
     }
 }
 

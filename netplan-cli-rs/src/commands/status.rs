@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::process::Command;
+use std::process::{Command, ExitCode};
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -45,7 +45,7 @@ pub struct StatusArgs {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: StatusArgs) -> Result<()> {
+pub fn run(args: StatusArgs) -> Result<ExitCode> {
     // --diff-only implies --diff, both need all interfaces
     let show_all = args.all || args.diff || args.diff_only;
 
@@ -54,7 +54,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let networkd = query_networkd().context("Cannot query systemd-networkd")?;
     if iproute2.is_empty() || networkd.is_empty() {
         eprintln!("Could not query iproute2 or systemd-networkd");
-        std::process::exit(1);
+        return Ok(ExitCode::from(1));
     }
 
     let nm_data = query_nm();
@@ -89,7 +89,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
     if let Some(ifname) = &args.ifname {
         if !ifaces.iter().any(|i| i.name == *ifname) {
             eprintln!("Could not find interface {}", ifname);
-            std::process::exit(1);
+            return Ok(ExitCode::from(1));
         }
     }
 
@@ -158,7 +158,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
 
 // ── Device type mapping ───────────────────────────────────────────────────────

@@ -3,6 +3,8 @@
 //! Feature flags are extracted from `src/*.{h,c}` at build time by `build.rs`
 //! and embedded as a `&[&str]` constant, mirroring `_features.py`.
 
+use std::process::ExitCode;
+
 use anyhow::Result;
 use clap::{Args, ValueEnum};
 use serde_json::json;
@@ -30,7 +32,7 @@ pub struct InfoArgs {
     yaml: bool,
 }
 
-pub fn run(args: InfoArgs) -> Result<()> {
+pub fn run(args: InfoArgs) -> Result<ExitCode> {
     let flags = features::FEATURE_FLAGS;
     let website = "https://netplan.io/";
 
@@ -52,5 +54,5 @@ pub fn run(args: InfoArgs) -> Result<()> {
             println!("  - {}", f);
         }
     }
-    Ok(())
+    Ok(ExitCode::SUCCESS)
 }
