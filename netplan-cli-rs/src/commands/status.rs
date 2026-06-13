@@ -569,8 +569,13 @@ fn query_routes() -> (Vec<Value>, Vec<Value>) {
     (r4, r6)
 }
 
+/// A DNS server entry as reported by resolved: (interface index, address family, raw address bytes).
+type ResolvedDnsAddress = (u64, u64, Vec<u8>);
+/// A search domain entry as reported by resolved: (interface index, domain name).
+type ResolvedSearchDomain = (u64, String);
+
 /// Parse busctl DNS data. Returns (addresses, search_domains).
-fn query_resolved() -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, String)>) {
+fn query_resolved() -> (Vec<ResolvedDnsAddress>, Vec<ResolvedSearchDomain>) {
     let busctl = match which_busctl() {
         Some(b) => b,
         None => return (vec![], vec![]),
@@ -603,7 +608,7 @@ fn which_busctl() -> Option<String> {
     }
 }
 
-fn parse_resolved_json(json_str: &str) -> (Vec<(u64, u64, Vec<u8>)>, Vec<(u64, String)>) {
+fn parse_resolved_json(json_str: &str) -> (Vec<ResolvedDnsAddress>, Vec<ResolvedSearchDomain>) {
     let v: Value = match serde_json::from_str(json_str) {
         Ok(v) => v,
         Err(_) => return (vec![], vec![]),
@@ -1071,7 +1076,7 @@ fn ipv6_in_network(addr: &Ipv6Addr, net: &Ipv6Addr, prefix: u32) -> bool {
 
 // ── Correlate bridge/bond/vrf ─────────────────────────────────────────────────
 
-fn correlate_members_and_uplinks(ifaces: &mut Vec<IfaceData>) {
+fn correlate_members_and_uplinks(ifaces: &mut [IfaceData]) {
     let uplink_types = ["bond", "bridge", "vrf"];
     let mut members_to_uplink: HashMap<String, (String, &'static str)> = HashMap::new();
     let mut uplink_to_members: HashMap<String, Vec<String>> = HashMap::new();
@@ -2193,12 +2198,8 @@ fn filter_system_routes(
             && dr.route_type == "local"
             && (addresses.contains(&dr.to) || {
                 let ip_part = dr.to.split('/').next().unwrap_or(&dr.to);
-                ip_part
-                    .parse::<Ipv4Addr>()
-                    .map_or(false, |ip| ip.is_loopback())
-                    || ip_part
-                        .parse::<Ipv6Addr>()
-                        .map_or(false, |ip| ip.is_loopback())
+                ip_part.parse::<Ipv4Addr>().is_ok_and(|ip| ip.is_loopback())
+                    || ip_part.parse::<Ipv6Addr>().is_ok_and(|ip| ip.is_loopback())
             })
         {
             continue;
@@ -2859,9 +2860,9 @@ fn pretty_print_diff(
     let mut all_ifaces: Vec<(&str, u64, &Value)> = state
         .iter()
         .filter(|(k, _)| *k != "netplan-global-state")
-        .filter_map(|(k, v)| {
+        .map(|(k, v)| {
             let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0);
-            Some((k.as_str(), idx, v))
+            (k.as_str(), idx, v)
         })
         .collect();
     all_ifaces.sort_by_key(|(_, idx, _)| *idx);
@@ -3115,11 +3116,7 @@ fn display_diff_mac(
 
     if missing_sys.is_none() && missing_np.is_none() {
         if let Some(mac) = mac {
-            plined(
-                &" ".to_string(),
-                "MAC Address:",
-                &c_dim(&vendor_str(mac), use_color),
-            );
+            plined(" ", "MAC Address:", &c_dim(&vendor_str(mac), use_color));
         }
         return;
     }
@@ -3315,11 +3312,7 @@ fn display_diff_routes(
             }
         }
         let route_str = format_route_for_display(r, verbose);
-        plined(
-            &" ".to_string(),
-            title(displayed),
-            &c_dim(&route_str, use_color),
-        );
+        plined(" ", title(displayed), &c_dim(&route_str, use_color));
         displayed += 1;
     }
     // missing_np: in system, not netplan → '+'; missing_sys: in netplan, not system → '-'
