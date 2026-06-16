@@ -4,7 +4,7 @@
 use std::process::ExitCode;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 mod commands;
 mod ffi;
@@ -86,15 +86,17 @@ fn main() -> ExitCode {
 
     let mut raw_args: Vec<String> = std::env::args().collect();
 
-    const SUBCOMMANDS: &[&str] = &[
-        "apply", "generate", "get", "set", "info", "ip", "migrate", "status", "try",
-    ];
+    // Derive the known subcommand names from clap rather than maintaining a
+    // separate hardcoded list.  `--generator-mode` inside GenerateArgs is
+    // declared `#[arg(hide = true)]` so it stays invisible to normal users.
+    let cli_cmd = Cli::command();
+    let known_subcommands: Vec<&str> = cli_cmd.get_subcommands().map(|c| c.get_name()).collect();
 
     // First non-option argument (if any).
     let first_positional = raw_args.iter().skip(1).find(|a| !a.starts_with('-'));
 
     let has_known_subcommand = first_positional
-        .map(|a| SUBCOMMANDS.contains(&a.as_str()))
+        .map(|a| known_subcommands.contains(&a.as_str()))
         .unwrap_or(false);
 
     // Is this a systemd-generator / test-framework invocation?

@@ -14,6 +14,8 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
+use jiff::Timestamp;
+
 use anyhow::{Context, Result};
 use clap::Args;
 
@@ -127,7 +129,10 @@ pub fn run(args: TryArgs) -> Result<ExitCode> {
         apply_args.push("--state");
         apply_args.push(s);
     }
-    run_self(&apply_args)?;
+    let apply_rc = run_self(&apply_args)?;
+    if apply_rc != 0 {
+        return Ok(ExitCode::from(apply_rc as u8));
+    }
 
     // ── Touch the ready stamp (signals netplan-dbus we're waiting) ────────────
     touch_stamp(&stamp)?;
@@ -237,8 +242,12 @@ fn revert(
     clear_stamp(stamp);
 
     // 5. Re-apply with --state pointing to the tried config (best-effort)
-    if let Err(e) = run_self(&["apply", "--state", state_dir.as_str()]) {
-        eprintln!("[netplan] Warning: apply during revert failed: {}", e);
+    match run_self(&["apply", "--state", state_dir.as_str()]) {
+        Ok(rc) if rc != 0 => {
+            eprintln!("[netplan] Warning: apply during revert exited with code {rc}")
+        }
+        Err(e) => eprintln!("[netplan] Warning: apply during revert failed: {e}"),
+        Ok(_) => {}
     }
 
     Ok(())
@@ -307,11 +316,8 @@ fn install_config_file(config_file: &str) -> Result<String> {
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("netplan-try-extra");
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64();
-    let dest = format!("{}/{}.{:.0}.yaml", dest_dir, base, ts);
+    let ts = Timestamp::now().as_second();
+    let dest = format!("{}/{}.{}.yaml", dest_dir, base, ts);
     std::fs::copy(config_file, &dest)
         .with_context(|| format!("Failed to copy {} to {}", config_file, dest))?;
     Ok(dest)
@@ -344,21 +350,12 @@ fn clear_stamp(path: &str) {
 
 // ── Run self as subprocess ────────────────────────────────────────────────────
 
-fn run_self(args: &[&str]) -> Result<()> {
+/// Invoke the current binary with `args` and return the raw exit code.
+fn run_self(args: &[&str]) -> Result<i32> {
     let exe = std::env::current_exe().context("Cannot determine current executable path")?;
-    let status = std::process::Command::new(&exe)
-        .args(args)
-        .status()
-        .with_context(|| format!("Failed to exec {:?}", exe))?;
-    let rc = status.code().unwrap_or(1);
-    if rc != 0 {
-        anyhow::bail!(
-            "'netplan {}' exited with code {}",
-            args.first().unwrap_or(&"?"),
-            rc
-        );
-    }
-    Ok(())
+    let exe_str = exe.to_string_lossy();
+    let rc = crate::utils::runner::run(&exe_str, args);
+    Ok(rc)
 }
 
 // ── Tree copy ─────────────────────────────────────────────────────────────────
@@ -414,10 +411,7 @@ fn walkdir(dir: &Path) -> Vec<(std::path::PathBuf, std::fs::Metadata)> {
 
 fn make_tempdir(prefix: &str) -> Result<String> {
     let pid = std::process::id();
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
+    let ts = Timestamp::now().as_nanosecond();
     let path = format!("/tmp/{}{}-{}", prefix, pid, ts);
     std::fs::create_dir_all(&path).context("Failed to create temp directory")?;
     Ok(path)
