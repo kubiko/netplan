@@ -1,6 +1,10 @@
 //! `netplan generate` – produce backend-specific config from YAML sources.
 //!
 //! Mirrors `netplan_cli/cli/commands/generate.py`.
+//!
+//! This binary also acts as a **systemd generator** when invoked without the
+//! `generate` subcommand keyword.  In that case `main()` injects
+//! `generate --generator-mode` so this module handles both paths.
 
 use std::fs;
 use std::path::Path;
@@ -21,9 +25,32 @@ pub struct GenerateArgs {
     /// (legacy option, passes through to the old generator binary)
     #[arg(long)]
     mapping: Option<String>,
+
+    /// Injected by main() when the binary is called as a systemd generator
+    /// (i.e. without the explicit `generate` subcommand word).
+    #[arg(long, hide = true)]
+    generator_mode: bool,
+
+    /// Ignore configuration errors (systemd generator convention).
+    #[arg(long)]
+    ignore_errors: bool,
+
+    /// Trailing positional arguments in systemd-generator calling convention:
+    ///   GENERATOR_DIR GENERATOR_EARLY_DIR GENERATOR_LATE_DIR [--flags...]
+    ///
+    /// `trailing_var_arg` causes clap to capture everything after the first
+    /// positional — including tokens starting with `--` — so flags such as
+    /// `--ignore-errors` appended after the dirs are parsed manually below.
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    generator_dirs: Vec<String>,
 }
 
 pub fn run(args: GenerateArgs) -> Result<()> {
+    // ── Systemd generator mode ────────────────────────────────────────────────
+    if args.generator_mode {
+        return run_generator_mode(args);
+    }
+
     // ── SNAP environment: delegate to D-Bus ──────────────────────────────────
     if std::env::var("SNAP").is_ok() {
         let busctl = which("busctl")?;
@@ -154,6 +181,63 @@ pub fn run(args: GenerateArgs) -> Result<()> {
 
         std::process::exit(rc);
     }
+}
+
+/// Handle the systemd-generator calling convention:
+///
+///   netplan [--root-dir ROOTDIR] GEN_DIR GEN_EARLY_DIR GEN_LATE_DIR [--ignore-errors]
+///
+/// (The `generate --generator-mode` prefix is injected by `main()` before
+/// clap parsing, so by the time we arrive here the generator dirs and any
+/// trailing flags are in `args.generator_dirs`.)
+fn run_generator_mode(args: GenerateArgs) -> Result<()> {
+    let rd = args.root_dir.as_deref().unwrap_or("/");
+
+    // Separate directory paths from flags that may follow them.
+    let mut dirs: Vec<String> = Vec::new();
+    let mut ignore_errors = args.ignore_errors;
+
+    for item in &args.generator_dirs {
+        if let Some(flag) = item.strip_prefix("--") {
+            match flag {
+                "ignore-errors" => ignore_errors = true,
+                _ => {
+                    eprintln!("failed to parse options: Unknown option {}", item);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            dirs.push(item.clone());
+        }
+    }
+
+    // Called without generator dirs → invoked directly, not by systemd.
+    if dirs.is_empty() {
+        eprintln!(
+            "{}: can not be called directly as a systemd generator",
+            std::env::args().next().unwrap_or_default()
+        );
+        std::process::exit(1);
+    }
+
+    // Call the real C generator binary.  We derive its path from
+    // NETPLAN_CONFIGURE_PATH so we never exec ourselves recursively.
+    let c_generator = utils::get_c_generator_path();
+
+    let mut cmd_args: Vec<String> = vec!["--root-dir".to_string(), rd.to_string()];
+    cmd_args.extend(dirs);
+    if ignore_errors {
+        cmd_args.push("--ignore-errors".to_string());
+    }
+
+    let rc = Command::new(&c_generator)
+        .args(&cmd_args)
+        .status()
+        .with_context(|| format!("failed to run C generator: {}", c_generator))?
+        .code()
+        .unwrap_or(1);
+
+    std::process::exit(rc);
 }
 
 fn which(name: &str) -> Result<String> {
