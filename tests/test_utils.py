@@ -18,6 +18,7 @@
 import io
 import os
 import sys
+import subprocess
 import unittest
 import tempfile
 import glob
@@ -98,14 +99,32 @@ fi
 
 
 def call_cli(args):
+    """Invoke the netplan CLI and return stdout as a string.
+
+    If NETPLAN_CLI_BINARY is set, the Rust binary at that path is executed as a
+    subprocess.  Otherwise the Python netplan_cli stack is called in-process so
+    that unittest.mock @patch decorators applied by the caller stay effective.
+
+    Raises Exception on non-zero exit.
+    """
+    binary = os.environ.get('NETPLAN_CLI_BINARY')
+    if binary:
+        result = subprocess.run([binary] + args, capture_output=True, text=True)
+        if result.returncode != 0:
+            msg = result.stderr.strip()
+            if msg.startswith('Command failed: '):
+                msg = msg[len('Command failed: '):]
+            raise Exception(msg)
+        return result.stdout
+
     old_sys_argv = sys.argv
     sys.argv = [old_sys_argv[0]] + args
     f = io.StringIO()
     try:
         with redirect_stdout(f):
-            netplan = Netplan()
-            netplan.parse_args()
-            netplan.run_command()
+            n = Netplan()
+            n.parse_args()
+            n.run_command()
             return f.getvalue()
     finally:
         sys.argv = old_sys_argv
