@@ -32,7 +32,7 @@ from netplan_cli.cli.commands.status import NetplanStatus
 from netplan_cli.cli.core import Netplan
 from netplan_cli.cli.state import Interface, SystemConfigState
 
-from tests.test_utils import call_cli as call_cli_rust
+from tests.test_utils import call_cli as call_cli_rust, MockStatusEnv
 
 
 def call_cli(args):
@@ -52,100 +52,6 @@ def call_cli(args):
             return f.getvalue()
     finally:
         sys.argv = old_sys_argv
-
-
-class MockStatusEnv:
-    """Sets up mock system commands (ip, networkctl, nmcli, busctl) on PATH
-    and a temporary --root-dir containing a fake /etc/resolv.conf.
-
-    Usage::
-
-        with MockStatusEnv(iproute2=..., networkd=...) as env:
-            out = call_cli_rust(['status', '-a', '--root-dir', env.root_dir])
-    """
-
-    def __init__(self, iproute2='[]', networkd='{"Interfaces":[]}',
-                 route4='[]', route6='[]', nmcli='',
-                 networkctl_status='', resolv_conf=''):
-        self._cmds_dir = tempfile.mkdtemp()
-        self._root_dir = tempfile.mkdtemp()
-        self._orig_path = None
-
-        # Write data files referenced by the mock scripts
-        data_files = {
-            'iproute2.json': iproute2,
-            'networkd.json': networkd,
-            'route4.json': route4,
-            'route6.json': route6,
-            'nmcli.txt': nmcli,
-            'networkctl_status.txt': networkctl_status,
-        }
-        for fname, content in data_files.items():
-            with open(os.path.join(self._cmds_dir, fname), 'w') as f:
-                f.write(content)
-
-        cmds = self._cmds_dir
-
-        # mock `ip` — dispatch on argument string
-        self._write_script('ip', f'''\
-#!/bin/sh
-ARGS="$*"
-case "$ARGS" in
-    "-d -j addr")
-        cat "{cmds}/iproute2.json" ;;
-    "-d -j -4 route show table all")
-        cat "{cmds}/route4.json" ;;
-    "-d -j -6 route show table all")
-        cat "{cmds}/route6.json" ;;
-    *)
-        printf '[]' ;;
-esac
-''')
-
-        # mock `networkctl` — --json=short returns networkd data; status returns text
-        self._write_script('networkctl', f'''\
-#!/bin/sh
-case "$1" in
-    "--json=short") cat "{cmds}/networkd.json" ;;
-    "status")       cat "{cmds}/networkctl_status.txt" ;;
-    *)              ;;
-esac
-''')
-
-        # mock `nmcli` — always return the nmcli data file
-        self._write_script('nmcli', f'''\
-#!/bin/sh
-cat "{cmds}/nmcli.txt"
-''')
-
-        # mock `busctl` — always fail so DNS resolving is skipped gracefully
-        self._write_script('busctl', '#!/bin/sh\nexit 1\n')
-
-        # Create fake resolv.conf inside root_dir
-        os.makedirs(os.path.join(self._root_dir, 'etc'), exist_ok=True)
-        with open(os.path.join(self._root_dir, 'etc', 'resolv.conf'), 'w') as f:
-            f.write(resolv_conf)
-
-    def _write_script(self, name, content):
-        path = os.path.join(self._cmds_dir, name)
-        with open(path, 'w') as f:
-            f.write(content)
-        os.chmod(path, 0o755)
-
-    @property
-    def root_dir(self):
-        return self._root_dir
-
-    def __enter__(self):
-        self._orig_path = os.environ.get('PATH', '')
-        os.environ['PATH'] = self._cmds_dir + os.pathsep + self._orig_path
-        return self
-
-    def __exit__(self, *_args):
-        if self._orig_path is not None:
-            os.environ['PATH'] = self._orig_path
-        shutil.rmtree(self._cmds_dir, ignore_errors=True)
-        shutil.rmtree(self._root_dir, ignore_errors=True)
 
 
 IPROUTE2 = '[{"ifindex":1,"ifname":"lo","flags":["LOOPBACK","UP","LOWER_UP"],"mtu":65536,"qdisc":"noqueue","operstate":"UNKNOWN","group":"default","txqlen":1000,"link_type":"loopback","address":"00:00:00:00:00:00","broadcast":"00:00:00:00:00:00","promiscuity":0,"min_mtu":0,"max_mtu":0,"num_tx_queues":1,"num_rx_queues":1,"gso_max_size":65536,"gso_max_segs":65535,"addr_info":[{"family":"inet","local":"127.0.0.1","prefixlen":8,"scope":"host","label":"lo","valid_life_time":4294967295,"preferred_life_time":4294967295},{"family":"inet6","local":"::1","prefixlen":128,"scope":"host","valid_life_time":4294967295,"preferred_life_time":4294967295}]},{"ifindex":2,"ifname":"enp0s31f6","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],"mtu":1500,"qdisc":"fq_codel","operstate":"UP","group":"default","txqlen":1000,"link_type":"ether","address":"54:e1:ad:5f:24:b4","broadcast":"ff:ff:ff:ff:ff:ff","promiscuity":0,"min_mtu":68,"max_mtu":9000,"num_tx_queues":1,"num_rx_queues":1,"gso_max_size":65536,"gso_max_segs":65535,"parentbus":"pci","parentdev":"0000:00:1f.6","addr_info":[{"family":"inet","local":"192.168.178.62","prefixlen":24,"metric":100,"broadcast":"192.168.178.255","scope":"global","dynamic":true,"label":"enp0s31f6","valid_life_time":850698,"preferred_life_time":850698},{"family":"inet6","local":"2001:9e8:a19f:1c00:56e1:adff:fe5f:24b4","prefixlen":64,"scope":"global","dynamic":true,"mngtmpaddr":true,"noprefixroute":true,"valid_life_time":6821,"preferred_life_time":3221},{"family":"inet6","local":"fe80::56e1:adff:fe5f:24b4","prefixlen":64,"scope":"link","valid_life_time":4294967295,"preferred_life_time":4294967295}]},{"ifindex":5,"ifname":"wlan0","flags":["BROADCAST","MULTICAST","UP","LOWER_UP"],"mtu":1500,"qdisc":"noqueue","operstate":"UP","group":"default","txqlen":1000,"link_type":"ether","address":"1c:4d:70:e4:e4:0e","broadcast":"ff:ff:ff:ff:ff:ff","promiscuity":0,"min_mtu":256,"max_mtu":2304,"num_tx_queues":1,"num_rx_queues":1,"gso_max_size":65536,"gso_max_segs":65535,"parentbus":"pci","parentdev":"0000:04:00.0","addr_info":[{"family":"inet","local":"192.168.178.142","prefixlen":24,"broadcast":"192.168.178.255","scope":"global","dynamic":true,"noprefixroute":true,"label":"wlan0","valid_life_time":850700,"preferred_life_time":850700},{"family":"inet6","local":"2001:9e8:a19f:1c00:7011:2d1:951:ad03","prefixlen":64,"scope":"global","temporary":true,"dynamic":true,"valid_life_time":6822,"preferred_life_time":3222},{"family":"inet6","local":"2001:9e8:a19f:1c00:f24f:f724:5dd1:d0ad","prefixlen":64,"scope":"global","dynamic":true,"mngtmpaddr":true,"noprefixroute":true,"valid_life_time":6822,"preferred_life_time":3222},{"family":"inet6","local":"fe80::fec1:6ced:5268:b46c","prefixlen":64,"scope":"link","noprefixroute":true,"valid_life_time":4294967295,"preferred_life_time":4294967295}]},{"ifindex":41,"ifname":"wg0","flags":["POINTOPOINT","NOARP","UP","LOWER_UP"],"mtu":1420,"qdisc":"noqueue","operstate":"UNKNOWN","group":"default","txqlen":1000,"link_type":"none","promiscuity":0,"min_mtu":0,"max_mtu":2147483552,"linkinfo":{"info_kind":"wireguard"},"num_tx_queues":1,"num_rx_queues":1,"gso_max_size":65536,"gso_max_segs":65535,"addr_info":[{"family":"inet","local":"10.10.0.2","prefixlen":24,"scope":"global","label":"wg0","valid_life_time":4294967295,"preferred_life_time":4294967295}]},{"ifindex":46,"ifname":"wwan0","flags":["BROADCAST","MULTICAST","NOARP"],"mtu":1500,"qdisc":"noop","operstate":"DOWN","group":"default","txqlen":1000,"link_type":"ether","address":"a2:23:44:c4:4e:f8","broadcast":"ff:ff:ff:ff:ff:ff","promiscuity":0,"min_mtu":0,"max_mtu":2048,"num_tx_queues":1,"num_rx_queues":1,"gso_max_size":65536,"gso_max_segs":65535,"parentbus":"usb","parentdev":"1-6:1.12","addr_info":[]},{"ifindex":48,"link":null,"ifname":"tun0","flags":["POINTOPOINT","NOARP","UP","LOWER_UP"],"mtu":1480,"qdisc":"noqueue","operstate":"UNKNOWN","group":"default","txqlen":1000,"link_type":"sit","address":"1.1.1.1","link_pointtopoint":true,"broadcast":"2.2.2.2","promiscuity":0,"min_mtu":1280,"max_mtu":65555,"linkinfo":{"info_kind":"sit","info_data":{"proto":"ip6ip","remote":"2.2.2.2","local":"1.1.1.1","ttl":0,"pmtudisc":true,"prefix":"2002::","prefixlen":16}},"num_tx_queues":1,"num_rx_queues":1,"gso_max_size":65536,"gso_max_segs":65535,"addr_info":[{"family":"inet6","local":"2001:dead:beef::2","prefixlen":64,"scope":"global","valid_life_time":4294967295,"preferred_life_time":4294967295}]},{"ifindex":49,"ifname":"tun1","flags":["POINTOPOINT","MULTICAST","NOARP","UP","LOWER_UP"],"mtu":1500,"qdisc":"pfifo_fast","operstate":"UNKNOWN","link_type":"none","linkinfo":{"info_kind":"tun","info_data":{"type":"tun"}}}]'  # nopep8
