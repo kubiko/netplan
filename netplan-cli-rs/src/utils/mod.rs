@@ -6,10 +6,10 @@
 pub mod iface;
 pub mod networkd;
 pub mod nm;
+pub mod runner;
 pub mod systemctl;
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use anyhow::Result;
 
@@ -123,20 +123,12 @@ pub fn split_dotted_path(key: &str) -> Vec<String> {
 
 /// Run `program args…` and return the exit code.  stdout/stderr are inherited.
 pub fn run_cmd(program: &str, args: &[&str]) -> i32 {
-    Command::new(program)
-        .args(args)
-        .status()
-        .map(|s| s.code().unwrap_or(1))
-        .unwrap_or(1)
+    runner::run(program, args)
 }
 
 /// Run `program args…` and fail if the exit code is non-zero.
 pub fn check_cmd(program: &str, args: &[&str]) -> Result<()> {
-    let rc = run_cmd(program, args);
-    if rc != 0 {
-        bail!("'{}' exited with code {}", program, rc);
-    }
-    Ok(())
+    runner::check(program, args)
 }
 
 // ── Glob helpers ──────────────────────────────────────────────────────────────
