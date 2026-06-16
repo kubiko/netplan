@@ -11,7 +11,7 @@ pub mod systemctl;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 

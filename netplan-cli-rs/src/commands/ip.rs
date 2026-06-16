@@ -4,9 +4,9 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand};
 
 // ── Argument types ────────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ pub struct LeasesArgs {
 pub fn run(args: IpArgs) -> Result<ExitCode> {
     match args.subcommand {
         Some(IpSubcommand::Leases(a)) => run_leases(a),
-        None => bail!("Available commands:\n  leases   Display IP leases"),
+        None => return Err(anyhow!("Available commands:\n  leases   Display IP leases")),
     }
 }
 
@@ -64,10 +64,16 @@ fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
 
     let netdef = match matches.as_slice() {
         [netdef] => netdef,
-        [] => bail!("No lease found for interface '{iface}' (not managed by Netplan)"),
-        _ => bail!(
-            "No lease found for interface '{iface}': multiple netplan configurations match it"
-        ),
+        [] => {
+            return Err(anyhow!(
+                "No lease found for interface '{iface}' (not managed by Netplan)"
+            ))
+        }
+        _ => {
+            return Err(anyhow!(
+                "No lease found for interface '{iface}': multiple netplan configurations match it"
+            ))
+        }
     };
 
     let backend = netdef.backend_name();
@@ -75,7 +81,7 @@ fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
     let lease_result = match backend {
         "networkd" => find_networkd_lease(iface, root_dir),
         "NetworkManager" => find_nm_lease(iface, root_dir),
-        other => bail!("unknown backend '{other}' for interface '{iface}'"),
+        other => return Err(anyhow!("unknown backend '{other}' for interface '{iface}'")),
     };
 
     match lease_result {
@@ -88,7 +94,7 @@ fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Err(e) => bail!("No lease found for interface '{iface}': {e}"),
+        Err(e) => return Err(anyhow!("No lease found for interface '{iface}': {e}")),
     }
 }
 
@@ -107,7 +113,7 @@ fn find_networkd_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     if lease_path.exists() {
         Ok(lease_path)
     } else {
-        bail!("no lease file at {:?}", lease_path)
+        return Err(anyhow!("no lease file at {:?}", lease_path));
     }
 }
 
@@ -119,11 +125,11 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
         .context("failed to run nmcli dev show")?;
 
     if !dev_out.status.success() {
-        bail!(
+        return Err(anyhow!(
             "Could not find a NetworkManager connection for the interface: \
              nmcli exited with {}",
             dev_out.status
-        );
+        ));
     }
 
     let dev_text = String::from_utf8_lossy(&dev_out.stdout);
@@ -145,11 +151,11 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
         .context("failed to run nmcli con show")?;
 
     if !con_out.status.success() {
-        bail!(
+        return Err(anyhow!(
             "Could not find a NetworkManager connection for the interface: \
              nmcli exited with {}",
             con_out.status
-        );
+        ));
     }
 
     let con_text = String::from_utf8_lossy(&con_out.stdout);
@@ -178,8 +184,8 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
         return Ok(dhclient);
     }
 
-    bail!(
+    return Err(anyhow!(
         "no lease file found (tried internal and dhclient paths in {:?})",
         base
-    )
+    ));
 }

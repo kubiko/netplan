@@ -371,7 +371,7 @@ fn copy_tree(src: &str, dst: &str, missing_ok: bool) -> Result<()> {
         if missing_ok {
             return Ok(());
         }
-        anyhow::bail!("Source directory does not exist: {}", src);
+        return Err(anyhow::anyhow!("Source directory does not exist: {}", src));
     }
 
     for entry in walkdir(src_path) {

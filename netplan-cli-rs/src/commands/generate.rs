@@ -10,7 +10,7 @@ use std::fs;
 use std::path::Path;
 use std::process::{Command, ExitCode};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
 use crate::utils;
@@ -71,9 +71,14 @@ pub fn run(args: GenerateArgs) -> Result<ExitCode> {
             .unwrap_or(1);
 
         if rc == 130 {
-            bail!("PermissionError: failed to communicate with dbus service");
+            return Err(anyhow!(
+                "PermissionError: failed to communicate with dbus service"
+            ));
         } else if rc != 0 {
-            bail!("failed to communicate with dbus service: error {}", rc);
+            return Err(anyhow!(
+                "failed to communicate with dbus service: error {}",
+                rc
+            ));
         }
         return Ok(ExitCode::SUCCESS);
     }
