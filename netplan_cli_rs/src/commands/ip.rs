@@ -38,7 +38,7 @@ pub struct LeasesArgs {
 pub fn run(args: IpArgs) -> Result<ExitCode> {
     match args.subcommand {
         Some(IpSubcommand::Leases(a)) => run_leases(a),
-        None => return Err(anyhow!("Available commands:\n  leases   Display IP leases")),
+        None => Err(anyhow!("Available commands:\n  leases   Display IP leases")),
     }
 }
 
@@ -56,8 +56,8 @@ fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
     let matches: Vec<_> = state
         .netdefs()
         .filter(|nd| {
-            nd.id() == iface.as_str()
-                || nd.set_name().as_deref() == Some(iface.as_str())
+            nd.id().as_deref().unwrap_or("") == iface.as_str()
+                || nd.set_name().ok().flatten().as_deref() == Some(iface.as_str())
                 || nd.matches_interface(iface, None, None)
         })
         .collect();
@@ -94,7 +94,7 @@ fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
             }
             Ok(ExitCode::SUCCESS)
         }
-        Err(e) => return Err(anyhow!("No lease found for interface '{iface}': {e}")),
+        Err(e) => Err(anyhow!("No lease found for interface '{iface}': {e}")),
     }
 }
 
@@ -113,15 +113,13 @@ fn find_networkd_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     if lease_path.exists() {
         Ok(lease_path)
     } else {
-        return Err(anyhow!("no lease file at {:?}", lease_path));
+        Err(anyhow!("no lease file at {:?}", lease_path))
     }
 }
 
 fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     // Step 1: get the NM connection name via `nmcli dev show <iface>`.
-    let dev_out = Command::new("nmcli")
-        .args(["dev", "show", iface])
-        .output()
+    let dev_out = crate::utils::runner::output("nmcli", &["dev", "show", iface])
         .context("failed to run nmcli dev show")?;
 
     if !dev_out.status.success() {
@@ -145,9 +143,7 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     })?;
 
     // Step 2: get the connection UUID via `nmcli con show id <conn_id>`.
-    let con_out = Command::new("nmcli")
-        .args(["con", "show", "id", &conn_id])
-        .output()
+    let con_out = crate::utils::runner::output("nmcli", &["con", "show", "id", &conn_id])
         .context("failed to run nmcli con show")?;
 
     if !con_out.status.success() {
@@ -184,8 +180,8 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
         return Ok(dhclient);
     }
 
-    return Err(anyhow!(
+    Err(anyhow!(
         "no lease file found (tried internal and dhclient paths in {:?})",
         base
-    ));
+    ))
 }

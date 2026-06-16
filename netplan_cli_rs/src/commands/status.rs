@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 use anyhow::{Context, Result};
 use clap::Args;
@@ -471,17 +471,8 @@ impl IfaceData {
 
 // ── System queries ────────────────────────────────────────────────────────────
 
-/// Run `args[0] args[1..]` and capture its stdout as a string.
-///
-/// Unlike [`crate::utils::run_cmd`], which runs a command with inherited
-/// stdio and returns its exit code, this is for commands whose output we
-/// need to parse.
 fn capture_cmd(args: &[&str]) -> Result<String> {
-    let out = Command::new(args[0])
-        .args(&args[1..])
-        .output()
-        .with_context(|| format!("failed to run {:?}", args[0]))?;
-    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+    crate::utils::runner::capture(args[0], &args[1..])
 }
 
 fn query_iproute2() -> Result<Vec<Value>> {
@@ -599,12 +590,12 @@ fn query_resolved() -> (Vec<ResolvedDnsAddress>, Vec<ResolvedSearchDomain>) {
 }
 
 fn which_busctl() -> Option<String> {
-    let out = Command::new("which").arg("busctl").output().ok()?;
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    let s = crate::utils::runner::capture("which", &["busctl"]).ok()?;
+    let s = s.trim();
     if s.is_empty() {
         None
     } else {
-        Some(s)
+        Some(s.to_string())
     }
 }
 
@@ -2012,23 +2003,23 @@ fn load_netplan_ifaces(rootdir: &str) -> HashMap<String, NetplanIface> {
 
     // Override with C API values (more reliable for dhcp4/dhcp6/link_local/accept_ra/macaddress/links)
     for netdef in state.netdefs() {
-        let id = netdef.id();
+        let Ok(id) = netdef.id() else { continue };
         if let Some(iface) = ifaces.get_mut(&id) {
             iface.dhcp4 = netdef.dhcp4();
             iface.dhcp6 = netdef.dhcp6();
             iface.link_local_ipv4 = netdef.link_local_ipv4();
             iface.link_local_ipv6 = netdef.link_local_ipv6();
             iface.accept_ra = netdef.accept_ra();
-            if let Some(mac) = netdef.macaddress() {
+            if let Some(mac) = netdef.macaddress().ok().flatten() {
                 iface.macaddress = Some(mac);
             }
-            if let Some(b) = netdef.bridge_link_id() {
+            if let Some(b) = netdef.bridge_link_id().ok().flatten() {
                 iface.bridge = Some(b);
             }
-            if let Some(b) = netdef.bond_link_id() {
+            if let Some(b) = netdef.bond_link_id().ok().flatten() {
                 iface.bond = Some(b);
             }
-            if let Some(v) = netdef.vrf_link_id() {
+            if let Some(v) = netdef.vrf_link_id().ok().flatten() {
                 iface.vrf = Some(v);
             }
         }

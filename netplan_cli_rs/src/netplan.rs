@@ -336,24 +336,20 @@ impl NetDef {
     }
 
     /// The Netplan ID string (equals interface name for virtual interfaces).
-    pub fn id(&self) -> String {
+    pub fn id(&self) -> Result<String> {
         // SAFETY: `self.0` is a valid netdef pointer; `buf`/`len` describe the
         // growable buffer owned by `read_string_buf`.
         read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(self.0, buf, len) })
     }
 
     /// The `set-name` value, or `None` if not configured.
-    pub fn set_name(&self) -> Option<String> {
+    pub fn set_name(&self) -> Result<Option<String>> {
         // SAFETY: `self.0` is a valid netdef pointer; `buf`/`len` describe the
         // growable buffer owned by `read_string_buf`.
         let s = read_string_buf(|buf, len| unsafe {
             ffi::netplan_netdef_get_set_name(self.0, buf, len)
-        });
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
+        })?;
+        Ok(if s.is_empty() { None } else { Some(s) })
     }
 
     /// `true` if the netdef contains a `match:` stanza.
@@ -406,68 +402,52 @@ impl NetDef {
         }
     }
 
-    pub fn macaddress(&self) -> Option<String> {
+    pub fn macaddress(&self) -> Result<Option<String>> {
         // SAFETY: `self.0` is a valid netdef pointer; `buf`/`len` describe the
         // growable buffer owned by `read_string_buf`.
         let s = read_string_buf(|buf, len| unsafe {
             ffi::netplan_netdef_get_macaddress(self.0, buf, len)
-        });
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
+        })?;
+        Ok(if s.is_empty() { None } else { Some(s) })
     }
 
-    pub fn bridge_link_id(&self) -> Option<String> {
+    pub fn bridge_link_id(&self) -> Result<Option<String>> {
         // SAFETY: `self.0` is a valid netdef pointer; the returned pointer is
         // either NULL or a netdef owned by the same `State`, checked below.
         let ptr = unsafe { ffi::netplan_netdef_get_bridge_link(self.0) };
         if ptr.is_null() {
-            return None;
+            return Ok(None);
         }
         // SAFETY: `ptr` was just checked non-null and points to a valid
         // netdef owned by the `State`.
-        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
-        if id.is_empty() {
-            None
-        } else {
-            Some(id)
-        }
+        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) })?;
+        Ok(if id.is_empty() { None } else { Some(id) })
     }
 
-    pub fn bond_link_id(&self) -> Option<String> {
+    pub fn bond_link_id(&self) -> Result<Option<String>> {
         // SAFETY: `self.0` is a valid netdef pointer; the returned pointer is
         // either NULL or a netdef owned by the same `State`, checked below.
         let ptr = unsafe { ffi::netplan_netdef_get_bond_link(self.0) };
         if ptr.is_null() {
-            return None;
+            return Ok(None);
         }
         // SAFETY: `ptr` was just checked non-null and points to a valid
         // netdef owned by the `State`.
-        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
-        if id.is_empty() {
-            None
-        } else {
-            Some(id)
-        }
+        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) })?;
+        Ok(if id.is_empty() { None } else { Some(id) })
     }
 
-    pub fn vrf_link_id(&self) -> Option<String> {
+    pub fn vrf_link_id(&self) -> Result<Option<String>> {
         // SAFETY: `self.0` is a valid netdef pointer; the returned pointer is
         // either NULL or a netdef owned by the same `State`, checked below.
         let ptr = unsafe { ffi::netplan_netdef_get_vrf_link(self.0) };
         if ptr.is_null() {
-            return None;
+            return Ok(None);
         }
         // SAFETY: `ptr` was just checked non-null and points to a valid
         // netdef owned by the `State`.
-        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) });
-        if id.is_empty() {
-            None
-        } else {
-            Some(id)
-        }
+        let id = read_string_buf(|buf, len| unsafe { ffi::netplan_netdef_get_id(ptr, buf, len) })?;
+        Ok(if id.is_empty() { None } else { Some(id) })
     }
 
     #[allow(dead_code)]
@@ -596,8 +576,11 @@ pub fn create_yaml_patch<'a>(
 /// Call `f(buf_ptr, buf_len)` with a growing buffer until the return value
 /// fits, then return the resulting `String`.
 ///
+/// Returns `Err` if libnetplan signals an unexpected error code or if the
+/// returned bytes are not valid UTF-8.
+///
 /// Mirrors `_string_realloc_call_no_error` from the Python CFFI layer.
-fn read_string_buf<F>(f: F) -> String
+fn read_string_buf<F>(f: F) -> Result<String>
 where
     F: Fn(*mut c_char, usize) -> isize,
 {
@@ -609,13 +592,14 @@ where
             continue;
         }
         if n < 0 {
-            log::warn!("libnetplan string getter returned unexpected error code {n}");
-            return String::new();
+            return Err(anyhow!("libnetplan string getter returned error code {n}"));
         }
         if n == 0 {
-            return String::new();
+            return Ok(String::new());
         }
         let content_len = (n as usize - 1).min(buf.len()); // exclude NUL
-        return String::from_utf8_lossy(&buf[..content_len]).into_owned();
+        let s = String::from_utf8(buf[..content_len].to_vec())
+            .with_context(|| "libnetplan returned non-UTF-8 string")?;
+        return Ok(s);
     }
 }
