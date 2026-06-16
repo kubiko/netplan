@@ -248,8 +248,8 @@ fn run_mapping(iface: &str, root_dir: &str) -> Result<ExitCode> {
     let matches: Vec<_> = state
         .netdefs()
         .filter(|nd| {
-            nd.id() == iface
-                || nd.set_name().as_deref() == Some(iface)
+            nd.id().as_deref().unwrap_or("") == iface
+                || nd.set_name().ok().flatten().as_deref() == Some(iface)
                 || nd.matches_interface(iface, None, None)
         })
         .collect();
@@ -259,10 +259,15 @@ fn run_mapping(iface: &str, root_dir: &str) -> Result<ExitCode> {
     }
 
     let nd = &matches[0];
-    let set_name = nd.set_name().unwrap_or_else(|| "(null)".to_string());
+    let id = nd.id().unwrap_or_default();
+    let set_name = nd
+        .set_name()
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "(null)".to_string());
     println!(
         "id={}, backend={}, set_name={}, match_name=(null), match_mac=(null), match_driver=(null)",
-        nd.id(),
+        id,
         nd.backend_name(),
         set_name,
     );

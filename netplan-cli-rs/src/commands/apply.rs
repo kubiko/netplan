@@ -169,12 +169,12 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
             let prev_links: Vec<String> = prev_state
                 .netdefs()
                 .filter(|nd| nd.is_virtual())
-                .map(|nd| nd.id())
+                .filter_map(|nd| nd.id().ok())
                 .collect();
             let curr_links: Vec<String> = state
                 .netdefs()
                 .filter(|nd| nd.is_virtual())
-                .map(|nd| nd.id())
+                .filter_map(|nd| nd.id().ok())
                 .collect();
             clear_virtual_links(&prev_links, &curr_links, &device_names);
         }
@@ -345,7 +345,7 @@ fn process_link_changes(
         if !netdef.is_physical() {
             continue;
         }
-        let Some(new_name) = netdef.set_name() else {
+        let Some(new_name) = netdef.set_name().ok().flatten() else {
             continue;
         };
         if !netdef.has_match() {
@@ -355,7 +355,7 @@ fn process_link_changes(
         let Some(current_iface) = find_matching_iface(interfaces, &netdef) else {
             eprintln!(
                 "[netplan] Cannot find unique matching interface for {}",
-                netdef.id()
+                netdef.id().as_deref().unwrap_or("(unknown)")
             );
             continue;
         };
