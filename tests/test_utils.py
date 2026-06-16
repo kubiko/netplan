@@ -17,6 +17,7 @@
 
 import io
 import os
+import shutil
 import sys
 import subprocess
 import unittest
@@ -98,16 +99,106 @@ fi
             fp.write("\nexit %d" % returncode)
 
 
+class MockStatusEnv:
+    """Sets up mock system commands (ip, networkctl, nmcli, busctl) on PATH
+    and a temporary --root-dir containing a fake /etc/resolv.conf.
+
+    Usage::
+
+        with MockStatusEnv(iproute2=..., networkd=...) as env:
+            out = call_cli(['status', '-a', '--root-dir', env.root_dir])
+    """
+
+    def __init__(self, iproute2='[]', networkd='{"Interfaces":[]}',
+                 route4='[]', route6='[]', nmcli='',
+                 networkctl_status='', resolv_conf=''):
+        self._cmds_dir = tempfile.mkdtemp()
+        self._root_dir = tempfile.mkdtemp()
+        self._orig_path = None
+
+        data_files = {
+            'iproute2.json': iproute2,
+            'networkd.json': networkd,
+            'route4.json': route4,
+            'route6.json': route6,
+            'nmcli.txt': nmcli,
+            'networkctl_status.txt': networkctl_status,
+        }
+        for fname, content in data_files.items():
+            with open(os.path.join(self._cmds_dir, fname), 'w') as f:
+                f.write(content)
+
+        cmds = self._cmds_dir
+        self._write_script('ip', f'''\
+#!/bin/sh
+ARGS="$*"
+case "$ARGS" in
+    "-d -j addr")
+        cat "{cmds}/iproute2.json" ;;
+    "-d -j -4 route show table all")
+        cat "{cmds}/route4.json" ;;
+    "-d -j -6 route show table all")
+        cat "{cmds}/route6.json" ;;
+    *)
+        printf '[]' ;;
+esac
+''')
+        self._write_script('networkctl', f'''\
+#!/bin/sh
+case "$1" in
+    "--json=short") cat "{cmds}/networkd.json" ;;
+    "status")       cat "{cmds}/networkctl_status.txt" ;;
+    *)              ;;
+esac
+''')
+        self._write_script('nmcli', f'#!/bin/sh\ncat "{cmds}/nmcli.txt"\n')
+        self._write_script('busctl', '#!/bin/sh\nexit 1\n')
+
+        os.makedirs(os.path.join(self._root_dir, 'etc'), exist_ok=True)
+        with open(os.path.join(self._root_dir, 'etc', 'resolv.conf'), 'w') as f:
+            f.write(resolv_conf)
+
+    def _write_script(self, name, content):
+        path = os.path.join(self._cmds_dir, name)
+        with open(path, 'w') as f:
+            f.write(content)
+        os.chmod(path, 0o755)
+
+    @property
+    def root_dir(self):
+        return self._root_dir
+
+    def __enter__(self):
+        self._orig_path = os.environ.get('PATH', '')
+        os.environ['PATH'] = self._cmds_dir + os.pathsep + self._orig_path
+        return self
+
+    def __exit__(self, *_args):
+        if self._orig_path is not None:
+            os.environ['PATH'] = self._orig_path
+        shutil.rmtree(self._cmds_dir, ignore_errors=True)
+        shutil.rmtree(self._root_dir, ignore_errors=True)
+
+
 def call_cli(args):
     """Invoke the netplan CLI and return stdout as a string.
 
-    If NETPLAN_CLI_BINARY is set, the Rust binary at that path is executed as a
-    subprocess.  Otherwise the Python netplan_cli stack is called in-process so
-    that unittest.mock @patch decorators applied by the caller stay effective.
+    Dispatch order:
+    1. NETPLAN_CLI_BINARY — explicit Rust binary path (set by tests/cli-rs/__init__.py
+       for pytest, or passed explicitly).
+    2. NETPLAN_GENERATE_PATH when its basename is 'netplan' — legacy convention used
+       by `unittest discover` invocations that set this var to the Rust binary.
+       Ignored when it points to the C generator (basename 'generate').
+    3. Python in-process — runs netplan_cli directly so unittest.mock @patch
+       decorators applied by the caller remain effective.
 
     Raises Exception on non-zero exit.
     """
     binary = os.environ.get('NETPLAN_CLI_BINARY')
+    if not binary:
+        gen_path = os.environ.get('NETPLAN_GENERATE_PATH', '')
+        if os.path.basename(gen_path) == 'netplan':
+            binary = gen_path
     if binary:
         result = subprocess.run([binary] + args, capture_output=True, text=True)
         if result.returncode != 0:

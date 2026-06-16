@@ -33,9 +33,8 @@ from netplan_cli.cli.state import (Interface, NetplanConfigState,
                                    SystemConfigState)
 
 from tests.cli.test_status import (BRIDGE, DNS_ADDRESSES, DNS_IP4, DNS_SEARCH, FAKE_DEV,
-                                   IPROUTE2, NETWORKD, NMCLI, ROUTE4, ROUTE6,
-                                   MockStatusEnv)
-from tests.test_utils import call_cli as call_cli_rust
+                                   IPROUTE2, NETWORKD, NMCLI, ROUTE4, ROUTE6)
+from tests.test_utils import call_cli as call_cli_rust, MockStatusEnv
 
 
 class TestStateRust(unittest.TestCase):
