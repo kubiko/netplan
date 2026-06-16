@@ -7,7 +7,7 @@ use std::io::Seek;
 use std::io::SeekFrom;
 use std::process::ExitCode;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
 use crate::{netplan, utils};
@@ -34,7 +34,7 @@ pub fn run(args: SetArgs) -> Result<ExitCode> {
     // Validate origin-hint is non-empty when provided
     if let Some(ref hint) = args.origin_hint {
         if hint.is_empty() {
-            bail!("Invalid/empty origin-hint");
+            return Err(anyhow!("Invalid/empty origin-hint"));
         }
     }
 

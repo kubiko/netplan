@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::process::{Command, ExitCode, Stdio};
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, Result};
 use clap::Args;
 
 use crate::{netplan, utils};
@@ -35,12 +35,14 @@ pub struct ApplyArgs {
 pub fn run(args: ApplyArgs) -> Result<ExitCode> {
     // SR-IOV-only path (stub — not exposed through public libnetplan API)
     if args.sriov_only {
-        bail!("SR-IOV config apply is not supported in the Rust CLI");
+        return Err(anyhow!(
+            "SR-IOV config apply is not supported in the Rust CLI"
+        ));
     }
 
     // OVS-cleanup-only path (stub)
     if args.only_ovs_cleanup {
-        bail!("OVS cleanup is not supported in the Rust CLI");
+        return Err(anyhow!("OVS cleanup is not supported in the Rust CLI"));
     }
 
     // ── SNAP environment: delegate to D-Bus ──────────────────────────────────
@@ -63,9 +65,14 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
             .unwrap_or(1);
 
         if rc == BUSCTL_EXIT_PERMISSION_DENIED {
-            bail!("PermissionError: failed to communicate with dbus service");
+            return Err(anyhow!(
+                "PermissionError: failed to communicate with dbus service"
+            ));
         } else if rc != 0 {
-            bail!("failed to communicate with dbus service: error {}", rc);
+            return Err(anyhow!(
+                "failed to communicate with dbus service: error {}",
+                rc
+            ));
         }
         return Ok(ExitCode::SUCCESS);
     }

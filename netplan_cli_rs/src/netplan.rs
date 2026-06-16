@@ -9,7 +9,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::raw::c_char;
 use std::os::unix::io::AsRawFd;
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use nix::sys::memfd::{memfd_create, MFdFlags};
 
 use crate::ffi;
@@ -58,7 +58,7 @@ impl Parser {
     pub fn new() -> Result<Self> {
         let p = unsafe { ffi::netplan_parser_new() };
         if p.is_null() {
-            bail!("netplan_parser_new returned NULL");
+            return Err(anyhow!("netplan_parser_new returned NULL"));
         }
         Ok(Self(p))
     }
@@ -170,7 +170,7 @@ impl State {
         // pointer or NULL, both checked below.
         let s = unsafe { ffi::netplan_state_new() };
         if s.is_null() {
-            bail!("netplan_state_new returned NULL");
+            return Err(anyhow!("netplan_state_new returned NULL"));
         }
         Ok(Self(s))
     }

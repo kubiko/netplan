@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::str::FromStr;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
 use crate::utils;
@@ -394,7 +394,9 @@ fn parse_mtu(
             .map_err(|_| anyhow::anyhow!("{iface}: cannot parse \"{mtu_str}\" as an MTU"))?;
         if let Some(existing) = c.mtu {
             if existing != mtu {
-                bail!("{iface}: tried to set MTU={mtu}, but already have MTU={existing}");
+                return Err(anyhow!(
+                    "{iface}: tried to set MTU={mtu}, but already have MTU={existing}"
+                ));
             }
         }
         c.mtu = Some(mtu);
@@ -410,7 +412,9 @@ fn parse_hwaddress(
     if let Some(mac) = opts.remove("hwaddress") {
         if let Some(ref existing) = c.macaddress {
             if existing != &mac {
-                bail!("{iface}: tried to set MAC {mac}, but already have MAC {existing}");
+                return Err(anyhow!(
+                    "{iface}: tried to set MAC {mac}, but already have MAC {existing}"
+                ));
             }
         }
         c.macaddress = Some(mac);
@@ -447,7 +451,7 @@ fn parse_ipv4_network(spec: &str) -> Result<u8> {
     // Try parsing mask as a number first
     if let Ok(n) = mask_part.parse::<u8>() {
         if n > 32 {
-            bail!("{addr_part}/{mask_part} has host bits set");
+            return Err(anyhow!("{addr_part}/{mask_part} has host bits set"));
         }
         return Ok(n);
     }
@@ -465,7 +469,7 @@ fn parse_ipv4_network(spec: &str) -> Result<u8> {
         !0u32 << (32 - leading_ones)
     };
     if mask_bits != expected {
-        bail!("Non-contiguous netmask: {mask_part}");
+        return Err(anyhow!("Non-contiguous netmask: {mask_part}"));
     }
     Ok(leading_ones as u8)
 }
@@ -474,7 +478,7 @@ fn parse_ipv4_network(spec: &str) -> Result<u8> {
 fn parse_ipv6_network(spec: &str) -> Result<u8> {
     let (addr_part, prefix_part) = match spec.split_once('/') {
         Some(p) => p,
-        None => bail!("missing prefix length in {spec}"),
+        None => return Err(anyhow!("missing prefix length in {spec}")),
     };
 
     // Validate address
@@ -485,7 +489,7 @@ fn parse_ipv6_network(spec: &str) -> Result<u8> {
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid prefix length: {prefix_part}"))?;
     if prefix > 128 {
-        bail!("prefix length {prefix} > 128");
+        return Err(anyhow!("prefix length {prefix} > 128"));
     }
     Ok(prefix)
 }
@@ -610,7 +614,7 @@ fn parse_ifupdown(rootdir: &str) -> Result<IfupdownConfig> {
                 auto.insert((*value).to_string());
             }
             ["mapping", _value] => {
-                bail!("mapping stanza is not supported");
+                return Err(anyhow!("mapping stanza is not supported"));
             }
             ["no-scripts", _value] => {
                 in_iface = None;
@@ -620,13 +624,13 @@ fn parse_ifupdown(rootdir: &str) -> Result<IfupdownConfig> {
                 let family = match *family_str {
                     "inet" => AddressFamily::Inet,
                     "inet6" => AddressFamily::Inet6,
-                    other => bail!("Unknown address family {other}"),
+                    other => return Err(anyhow!("Unknown address family {other}")),
                 };
                 let method = match *method_str {
                     "loopback" => Method::Loopback,
                     "static" => Method::Static,
                     "dhcp" => Method::Dhcp,
-                    other => bail!("Unsupported method {other}"),
+                    other => return Err(anyhow!("Unsupported method {other}")),
                 };
 
                 let iface_name = (*name).to_string();
@@ -642,16 +646,16 @@ fn parse_ifupdown(rootdir: &str) -> Result<IfupdownConfig> {
                 in_family = Some(family);
             }
             [stanza @ ("auto" | "allow-auto" | "allow-hotplug" | "mapping" | "no-scripts"), ..] => {
-                bail!(
+                return Err(anyhow!(
                     "Expected 1 field for stanza type {stanza} but got {}",
                     fields.len() - 1
-                );
+                ));
             }
             ["iface", ..] => {
-                bail!(
+                return Err(anyhow!(
                     "Expected 3 fields for stanza type iface but got {}",
                     fields.len() - 1
-                );
+                ));
             }
             _ => match (&in_iface, &in_family) {
                 (Some(iface_name), Some(family)) => {
@@ -667,7 +671,7 @@ fn parse_ifupdown(rootdir: &str) -> Result<IfupdownConfig> {
                         }
                     }
                 }
-                _ => bail!("Unknown stanza type {}", fields[0]),
+                _ => return Err(anyhow!("Unknown stanza type {}", fields[0])),
             },
         }
     }
@@ -753,7 +757,7 @@ fn expand_source_arg(rootdir: &str, curdir: &str, arg: &str) -> String {
 /// classes by the underlying `glob` crate.
 fn glob_paths(pattern: &str) -> Result<Vec<String>> {
     if pattern.contains(['?', '[', ']']) {
-        bail!("unsupported glob pattern: {pattern}");
+        return Err(anyhow!("unsupported glob pattern: {pattern}"));
     }
     Ok(utils::glob_paths(pattern))
 }
