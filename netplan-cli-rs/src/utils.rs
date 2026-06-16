@@ -28,6 +28,22 @@ pub fn get_generator_path() -> String {
         .unwrap_or_else(|_| "/usr/libexec/netplan/generate".to_string())
 }
 
+/// Return the path to the C generator binary.
+///
+/// When `NETPLAN_GENERATE_PATH` is set to the Rust wrapper binary itself
+/// (as in tests), we must NOT call ourselves recursively.  Instead, derive
+/// the C binary's path from `NETPLAN_CONFIGURE_PATH`: configure and generate
+/// live in the same directory in both installed and meson-build layouts.
+pub fn get_c_generator_path() -> String {
+    let configure = std::env::var("NETPLAN_CONFIGURE_PATH")
+        .unwrap_or_else(|_| "/usr/libexec/netplan/configure".to_string());
+    let gen = std::path::Path::new(&configure).with_file_name("generate");
+    if gen.exists() {
+        return gen.to_string_lossy().into_owned();
+    }
+    "/usr/libexec/netplan/generate".to_string()
+}
+
 // ── Subprocess helpers ────────────────────────────────────────────────────────
 
 /// Run `program args…` and return the exit code.  stderr is inherited.
