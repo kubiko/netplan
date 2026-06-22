@@ -322,7 +322,8 @@ pub fn run(args: MigrateArgs) -> Result<ExitCode> {
         } else {
             let dest = PathBuf::from(format!("{rootdir}/etc/netplan/10-ifupdown.yaml"));
             if let Some(parent) = dest.parent() {
-                fs::create_dir_all(parent).ok();
+                fs::create_dir_all(parent)
+                    .with_context(|| format!("Cannot create {:?}", parent))?;
             }
             // Use exclusive create (fail if exists)
             match fs::OpenOptions::new()
