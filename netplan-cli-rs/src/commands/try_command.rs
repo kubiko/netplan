@@ -62,6 +62,7 @@ extern "C" {
 
 // ── termios (Linux x86-64 / aarch64, glibc layout, NCCS=32, sizeof=60) ───────
 #[repr(C)]
+#[derive(Clone, Copy)]
 struct Termios {
     c_iflag: u32,
     c_oflag: u32,
@@ -322,8 +323,9 @@ fn restore_run_dirs(rootdir: &str, backup_dir: &str) -> Result<()> {
         let live_dst = format!("{}/{}", root, rel);
 
         if Path::new(&backup_src).exists() {
-            // Remove current state and restore from backup
-            let _ = std::fs::remove_dir_all(&live_dst);
+            if let Err(e) = std::fs::remove_dir_all(&live_dst) {
+                eprintln!("[netplan] Warning: could not remove {live_dst} during revert: {e}");
+            }
             std::fs::create_dir_all(&live_dst)?;
             copy_tree(&backup_src, &live_dst, true)?;
         }
@@ -420,8 +422,8 @@ fn copy_tree(src: &str, dst: &str, missing_ok: bool) -> Result<()> {
             }
             std::fs::copy(&entry_path, &dest)
                 .with_context(|| format!("Failed to copy {:?} → {:?}", entry_path, dest))?;
-            // Preserve permissions
-            let _ = std::fs::set_permissions(&dest, metadata.permissions());
+            std::fs::set_permissions(&dest, metadata.permissions())
+                .with_context(|| format!("Failed to set permissions on {:?}", dest))?;
         }
     }
     Ok(())
@@ -479,7 +481,7 @@ struct TermState {
 impl TermState {
     /// Save current terminal attributes for `fd`.
     fn save(fd: c_int) -> Self {
-        let is_tty = unsafe { isatty(fd) } != 0;
+        let mut is_tty = unsafe { isatty(fd) } != 0;
         let mut orig = Termios {
             c_iflag: 0,
             c_oflag: 0,
@@ -491,19 +493,13 @@ impl TermState {
             c_ospeed: 0,
         };
         if is_tty {
-            unsafe { tcgetattr(fd, &mut orig) };
-            // Disable ECHO so the countdown isn't cluttered by keystrokes
-            let new_attrs = Termios {
-                c_iflag: orig.c_iflag,
-                c_oflag: orig.c_oflag,
-                c_cflag: orig.c_cflag,
-                c_lflag: orig.c_lflag & !ECHO,
-                c_line: orig.c_line,
-                c_cc: orig.c_cc,
-                c_ispeed: orig.c_ispeed,
-                c_ospeed: orig.c_ospeed,
-            };
-            unsafe { tcsetattr(fd, TCSANOW, &new_attrs) };
+            if unsafe { tcgetattr(fd, &mut orig) } != 0 {
+                is_tty = false;
+            } else {
+                let mut no_echo = orig;
+                no_echo.c_lflag &= !ECHO;
+                unsafe { tcsetattr(fd, TCSANOW, &no_echo) };
+            }
         }
         TermState { is_tty, orig }
     }
