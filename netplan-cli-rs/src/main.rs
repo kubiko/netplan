@@ -155,16 +155,17 @@ fn main() -> ExitCode {
         eprintln!("[netplan] debug mode enabled");
     }
 
+    let runner = crate::utils::process::NativeCommandRunner::new();
     let result: Result<ExitCode> = match cli.command {
-        Command::Apply(args) => apply::run(args),
-        Command::Generate(args) => generate::run(args),
+        Command::Apply(args) => apply::run(args, &runner),
+        Command::Generate(args) => generate::run(args, &runner),
         Command::Get(args) => get::run(args),
-        Command::Ip(args) => ip::run(args),
+        Command::Ip(args) => ip::run(args, &runner),
         Command::Migrate(args) => migrate::run(args),
         Command::Set(args) => set::run(args),
-        Command::Status(args) => status::run(args),
+        Command::Status(args) => status::run(args, &runner),
         Command::Info(args) => info::run(args),
-        Command::Try(args) => try_command::run(args),
+        Command::Try(args) => try_command::run(args, &runner),
     };
 
     match result {

@@ -29,6 +29,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::Args;
 
 use crate::utils;
+use crate::utils::process::CommandRunner;
 
 #[derive(Args, Debug)]
 pub struct GenerateArgs {
@@ -60,7 +61,7 @@ pub struct GenerateArgs {
     generator_dirs: Vec<String>,
 }
 
-pub fn run(args: GenerateArgs) -> Result<ExitCode> {
+pub fn run(args: GenerateArgs, runner: &impl CommandRunner) -> Result<ExitCode> {
     // ── Systemd generator mode ────────────────────────────────────────────────
     if args.generator_mode {
         return run_generator_mode(args);
@@ -176,7 +177,7 @@ pub fn run(args: GenerateArgs) -> Result<ExitCode> {
         Ok(ExitCode::from((if rc != 0 { rc } else { rc2 }) as u8))
     } else {
         // ── Normal system path: trigger via daemon-reload ─────────────────────
-        utils::systemctl::daemon_reload()?;
+        utils::systemctl::daemon_reload(runner)?;
 
         let rc = Command::new(&configure)
             .status()

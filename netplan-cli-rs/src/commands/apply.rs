@@ -24,6 +24,7 @@ use std::process::{Command, ExitCode, Stdio};
 use anyhow::{anyhow, Result};
 use clap::Args;
 
+use crate::utils::process::CommandRunner;
 use crate::{netplan, utils};
 
 const MAX_IF_NAME_SIZE: usize = 16;
@@ -47,7 +48,7 @@ pub struct ApplyArgs {
     state: Option<String>,
 }
 
-pub fn run(args: ApplyArgs) -> Result<ExitCode> {
+pub fn run(args: ApplyArgs, runner: &impl CommandRunner) -> Result<ExitCode> {
     // SR-IOV-only path (stub — not exposed through public libnetplan API)
     if args.sriov_only {
         return Err(anyhow!(
@@ -126,7 +127,7 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
     if rc != 0 {
         return Ok(ExitCode::from(78)); // EX_CONFIG
     }
-    utils::systemctl::daemon_reload()?;
+    utils::systemctl::daemon_reload(runner)?;
 
     // ── Re-glob to determine what needs restarting ────────────────────────────
     let restart_networkd_new = !utils::glob_paths("/run/systemd/network/*netplan-*").is_empty();
@@ -149,7 +150,7 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
 
     // ── Stop backends that need restarting ────────────────────────────────────
     if restart_networkd {
-        utils::systemctl::run("stop", &["netplan-wpa-*.service"], false);
+        utils::systemctl::run("stop", &["netplan-wpa-*.service"], false, runner);
     }
 
     let mut loopback_connection = String::new();
@@ -163,7 +164,7 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
                 utils::nm::run(&["device", "disconnect", name]);
             }
         }
-        utils::systemctl::network_manager("stop", false);
+        utils::systemctl::network_manager("stop", false, runner);
     }
 
     // ── Refresh devices after stops ───────────────────────────────────────────
@@ -260,7 +261,7 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
         .join("netplan-regdom.service")
         .exists()
     {
-        utils::systemctl::run("start", &["netplan-regdom.service"], false);
+        utils::systemctl::run("start", &["netplan-regdom.service"], false, runner);
     }
 
     // ── (Re)start networkd backend ────────────────────────────────────────────
@@ -273,15 +274,15 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
                 .collect();
 
         // networkctl reload/reconfigure; fall back to hard restart if it fails
-        if utils::networkd::reload().is_err()
-            || utils::networkd::reconfigure(&utils::networkd::managed_interfaces()).is_err()
+        if utils::networkd::reload(runner).is_err()
+            || utils::networkd::reconfigure(&utils::networkd::managed_interfaces(), runner).is_err()
         {
             eprintln!("[netplan] Falling back to hard restart of systemd-networkd.service");
-            utils::systemctl::run("restart", &["systemd-networkd.service"], true);
+            utils::systemctl::run("restart", &["systemd-networkd.service"], true, runner);
         }
 
         // 1st: OVS cleanup (synchronous, avoids races)
-        utils::systemctl::run("start", &[utils::OVS_CLEANUP_SERVICE], true);
+        utils::systemctl::run("start", &[utils::OVS_CLEANUP_SERVICE], true, runner);
 
         // 2nd: WPA + other OVS services (synchronous for oneshot units)
         let start: Vec<&str> = netplan_wpa
@@ -290,7 +291,7 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
             .map(String::as_str)
             .collect();
         if !start.is_empty() {
-            utils::systemctl::run("start", &start, true);
+            utils::systemctl::run("start", &start, true, runner);
         }
     }
 
@@ -309,7 +310,7 @@ pub fn run(args: ApplyArgs) -> Result<ExitCode> {
         // Clear NM runtime state (NM_UNMANAGED udev rules etc.)
         let _ = std::fs::remove_dir_all("/run/NetworkManager/devices");
 
-        utils::systemctl::network_manager("start", false);
+        utils::systemctl::network_manager("start", false, runner);
 
         // If 'lo' was managed by NM, wait for NM to be ready then bring it back
         let nm_ifaces_set: HashSet<&str> = nm_ifaces_final.iter().map(String::as_str).collect();
