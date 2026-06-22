@@ -26,6 +26,8 @@ use anyhow::{Context, Result};
 use clap::Args;
 use serde_json::{Map, Value};
 
+use crate::utils::process::CommandRunner;
+
 // ── Argument types ────────────────────────────────────────────────────────────
 
 #[derive(Args, Debug)]
@@ -60,21 +62,21 @@ pub struct StatusArgs {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: StatusArgs) -> Result<ExitCode> {
+pub fn run(args: StatusArgs, runner: &impl CommandRunner) -> Result<ExitCode> {
     // --diff-only implies --diff, both need all interfaces
     let show_all = args.all || args.diff || args.diff_only;
 
     // Gather system data
-    let iproute2 = query_iproute2().context("Cannot query iproute2")?;
-    let networkd = query_networkd().context("Cannot query systemd-networkd")?;
+    let iproute2 = query_iproute2(runner).context("Cannot query iproute2")?;
+    let networkd = query_networkd(runner).context("Cannot query systemd-networkd")?;
     if iproute2.is_empty() || networkd.is_empty() {
         eprintln!("Could not query iproute2 or systemd-networkd");
         return Ok(ExitCode::from(1));
     }
 
-    let nm_data = query_nm();
-    let (routes4, routes6) = query_routes();
-    let (dns_addresses, dns_search) = query_resolved();
+    let nm_data = query_nm(runner);
+    let (routes4, routes6) = query_routes(runner);
+    let (dns_addresses, dns_search) = query_resolved(runner);
 
     // Build interface list
     let mut ifaces: Vec<IfaceData> = iproute2
@@ -88,11 +90,12 @@ pub fn run(args: StatusArgs) -> Result<ExitCode> {
                 &dns_search,
                 &routes4,
                 &routes6,
+                runner,
             )
         })
         .collect();
 
-    correlate_members_and_uplinks(&mut ifaces);
+    correlate_members_and_uplinks(&mut ifaces, runner);
 
     // Filter for online state: non-DOWN interfaces
     let active: Vec<&IfaceData> = ifaces.iter().filter(|i| i.operstate != "DOWN").collect();
@@ -130,7 +133,7 @@ pub fn run(args: StatusArgs) -> Result<ExitCode> {
     };
 
     for iface in iter {
-        state.insert(iface.name.clone(), Value::Object(iface.to_json_obj()));
+        state.insert(iface.name.clone(), Value::Object(iface.to_json_obj(runner)));
     }
 
     let format = args.format.to_lowercase();
@@ -303,7 +306,7 @@ impl IfaceData {
         None
     }
 
-    fn netdef_id(&self) -> Option<String> {
+    fn netdef_id(&self, runner: &impl CommandRunner) -> Option<String> {
         match self.backend() {
             Some(Backend::Networkd) => {
                 let netfile = self.nd_network_file.as_deref()?;
@@ -317,7 +320,7 @@ impl IfaceData {
                     .nth(1)?;
                 let mut netdef = after.split(".nmconnection").next()?.to_string();
                 if self.nm_type.as_deref() == Some("802-11-wireless") {
-                    if let Some(ssid) = self.ssid() {
+                    if let Some(ssid) = self.ssid(runner) {
                         let suffix = format!("-{}", ssid);
                         if let Some(pos) = netdef.find(&suffix) {
                             netdef.truncate(pos);
@@ -337,13 +340,13 @@ impl IfaceData {
             .filter(|s| !s.is_empty())
     }
 
-    fn ssid(&self) -> Option<String> {
+    fn ssid(&self, runner: &impl CommandRunner) -> Option<String> {
         if self.iface_type() != Some("wifi") {
             return None;
         }
         if self.backend() == Some(Backend::NetworkManager) {
             if let Some(nm_name) = &self.nm_name {
-                return query_nm_ssid(nm_name);
+                return query_nm_ssid(nm_name, runner);
             }
         }
         // Parse networkctl text for "Wi-Fi access point: <SSID> (<mac>)"
@@ -401,7 +404,7 @@ impl IfaceData {
         self.adminstate == "UP" && self.operstate == "UP"
     }
 
-    fn to_json_obj(&self) -> Map<String, Value> {
+    fn to_json_obj(&self, runner: &impl CommandRunner) -> Map<String, Value> {
         let mut m = Map::new();
         m.insert("index".into(), Value::Number(self.idx.into()));
         m.insert("adminstate".into(), Value::String(self.adminstate.clone()));
@@ -410,7 +413,7 @@ impl IfaceData {
         if let Some(t) = self.iface_type() {
             m.insert("type".into(), Value::String(t.to_string()));
         }
-        if let Some(s) = self.ssid() {
+        if let Some(s) = self.ssid(runner) {
             m.insert("ssid".into(), Value::String(s));
         }
         if let Some(tm) = self.tunnel_mode() {
@@ -419,7 +422,7 @@ impl IfaceData {
         if let Some(b) = self.backend() {
             m.insert("backend".into(), Value::String(b.to_string()));
         }
-        if let Some(id) = self.netdef_id() {
+        if let Some(id) = self.netdef_id(runner) {
             m.insert("id".into(), Value::String(id));
         }
         if let Some(mac) = &self.macaddress {
@@ -486,31 +489,38 @@ impl IfaceData {
 
 // ── System queries ────────────────────────────────────────────────────────────
 
-fn capture_cmd(args: &[&str]) -> Result<String> {
-    crate::utils::runner::capture(args[0], &args[1..])
+fn capture_cmd(args: &[&str], runner: &impl CommandRunner) -> Result<String> {
+    use crate::utils::process::Command;
+    let output = Command::new(args[0])
+        .args(args[1..].iter().copied())
+        .run_with(runner)?;
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-fn query_iproute2() -> Result<Vec<Value>> {
-    let out = capture_cmd(&["ip", "-d", "-j", "addr"])?;
+fn query_iproute2(runner: &impl CommandRunner) -> Result<Vec<Value>> {
+    let out = capture_cmd(&["ip", "-d", "-j", "addr"], runner)?;
     let v: Value = serde_json::from_str(&out).context("ip addr JSON parse failed")?;
     Ok(v.as_array().cloned().unwrap_or_default())
 }
 
-fn query_networkd() -> Result<Vec<Value>> {
-    let out = capture_cmd(&["networkctl", "--json=short"])?;
+fn query_networkd(runner: &impl CommandRunner) -> Result<Vec<Value>> {
+    let out = capture_cmd(&["networkctl", "--json=short"], runner)?;
     let v: Value = serde_json::from_str(&out).context("networkctl JSON parse failed")?;
     Ok(v["Interfaces"].as_array().cloned().unwrap_or_default())
 }
 
-fn query_nm() -> Vec<Value> {
-    let out = match capture_cmd(&[
-        "nmcli",
-        "-t",
-        "-f",
-        "DEVICE,NAME,UUID,FILENAME,TYPE,AUTOCONNECT",
-        "con",
-        "show",
-    ]) {
+fn query_nm(runner: &impl CommandRunner) -> Vec<Value> {
+    let out = match capture_cmd(
+        &[
+            "nmcli",
+            "-t",
+            "-f",
+            "DEVICE,NAME,UUID,FILENAME,TYPE,AUTOCONNECT",
+            "con",
+            "show",
+        ],
+        runner,
+    ) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -531,10 +541,13 @@ fn query_nm() -> Vec<Value> {
     data
 }
 
-fn query_routes() -> (Vec<Value>, Vec<Value>) {
+fn query_routes(runner: &impl CommandRunner) -> (Vec<Value>, Vec<Value>) {
     let mut r4 = vec![];
     let mut r6 = vec![];
-    match capture_cmd(&["ip", "-d", "-j", "-4", "route", "show", "table", "all"]) {
+    match capture_cmd(
+        &["ip", "-d", "-j", "-4", "route", "show", "table", "all"],
+        runner,
+    ) {
         Ok(o) => match serde_json::from_str::<Value>(&o) {
             Ok(v) => {
                 if let Some(arr) = v.as_array() {
@@ -553,7 +566,10 @@ fn query_routes() -> (Vec<Value>, Vec<Value>) {
         },
         Err(e) => log::warn!("failed to query IPv4 routes: {e}"),
     }
-    match capture_cmd(&["ip", "-d", "-j", "-6", "route", "show", "table", "all"]) {
+    match capture_cmd(
+        &["ip", "-d", "-j", "-6", "route", "show", "table", "all"],
+        runner,
+    ) {
         Ok(o) => match serde_json::from_str::<Value>(&o) {
             Ok(v) => {
                 if let Some(arr) = v.as_array() {
@@ -581,31 +597,41 @@ type ResolvedDnsAddress = (u64, u64, Vec<u8>);
 type ResolvedSearchDomain = (u64, String);
 
 /// Parse busctl DNS data. Returns (addresses, search_domains).
-fn query_resolved() -> (Vec<ResolvedDnsAddress>, Vec<ResolvedSearchDomain>) {
-    let busctl = match which_busctl() {
+fn query_resolved(
+    runner: &impl CommandRunner,
+) -> (Vec<ResolvedDnsAddress>, Vec<ResolvedSearchDomain>) {
+    let busctl = match which_busctl(runner) {
         Some(b) => b,
         None => return (vec![], vec![]),
     };
-    let out = match capture_cmd(&[
-        &busctl,
-        "--json=short",
-        "call",
-        "--system",
-        "org.freedesktop.resolve1",
-        "/org/freedesktop/resolve1",
-        "org.freedesktop.DBus.Properties",
-        "GetAll",
-        "s",
-        "org.freedesktop.resolve1.Manager",
-    ]) {
+    let out = match capture_cmd(
+        &[
+            &busctl,
+            "--json=short",
+            "call",
+            "--system",
+            "org.freedesktop.resolve1",
+            "/org/freedesktop/resolve1",
+            "org.freedesktop.DBus.Properties",
+            "GetAll",
+            "s",
+            "org.freedesktop.resolve1.Manager",
+        ],
+        runner,
+    ) {
         Ok(o) => o,
         Err(_) => return (vec![], vec![]),
     };
     parse_resolved_json(&out)
 }
 
-fn which_busctl() -> Option<String> {
-    let s = crate::utils::runner::capture("which", &["busctl"]).ok()?;
+fn which_busctl(runner: &impl CommandRunner) -> Option<String> {
+    use crate::utils::process::Command;
+    let output = Command::new("which")
+        .args(["busctl"])
+        .run_with(runner)
+        .ok()?;
+    let s = String::from_utf8_lossy(&output.stdout);
     let s = s.trim();
     if s.is_empty() {
         None
@@ -669,16 +695,19 @@ fn parse_resolved_json(json_str: &str) -> (Vec<ResolvedDnsAddress>, Vec<Resolved
     (addresses, search)
 }
 
-fn query_nm_ssid(con_name: &str) -> Option<String> {
-    let out = capture_cmd(&[
-        "nmcli",
-        "--get-values",
-        "802-11-wireless.ssid",
-        "con",
-        "show",
-        "id",
-        con_name,
-    ])
+fn query_nm_ssid(con_name: &str, runner: &impl CommandRunner) -> Option<String> {
+    let out = capture_cmd(
+        &[
+            "nmcli",
+            "--get-values",
+            "802-11-wireless.ssid",
+            "con",
+            "show",
+            "id",
+            con_name,
+        ],
+        runner,
+    )
     .ok()?;
     let s = out.trim().to_string();
     if s.is_empty() {
@@ -688,12 +717,15 @@ fn query_nm_ssid(con_name: &str) -> Option<String> {
     }
 }
 
-fn query_networkctl_text(ifname: &str) -> String {
-    capture_cmd(&["networkctl", "status", "--", ifname]).unwrap_or_default()
+fn query_networkctl_text(ifname: &str, runner: &impl CommandRunner) -> String {
+    capture_cmd(&["networkctl", "status", "--", ifname], runner).unwrap_or_default()
 }
 
-fn query_members(ifname: &str) -> Vec<String> {
-    let out = match capture_cmd(&["ip", "-d", "-j", "link", "show", "master", ifname]) {
+fn query_members(ifname: &str, runner: &impl CommandRunner) -> Vec<String> {
+    let out = match capture_cmd(
+        &["ip", "-d", "-j", "link", "show", "master", ifname],
+        runner,
+    ) {
         Ok(o) => o,
         Err(_) => return vec![],
     };
@@ -782,6 +814,7 @@ fn bytes_to_ip(family: u64, bytes: &[u8]) -> Option<String> {
 
 // ── Interface builder ─────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 fn build_iface(
     ip: &Value,
     nd_data: &[Value],
@@ -790,6 +823,7 @@ fn build_iface(
     dns_search: &[(u64, String)],
     routes4: &[Value],
     routes6: &[Value],
+    runner: &impl CommandRunner,
 ) -> IfaceData {
     let idx = ip.get("ifindex").and_then(|v| v.as_u64()).unwrap_or(0);
     let name = ip
@@ -934,7 +968,7 @@ fn build_iface(
     // Addresses
     let addresses = build_addresses(ip, filtered_routes.as_deref());
 
-    let networkctl_text = query_networkctl_text(&name);
+    let networkctl_text = query_networkctl_text(&name, runner);
 
     IfaceData {
         idx,
@@ -1082,7 +1116,7 @@ fn ipv6_in_network(addr: &Ipv6Addr, net: &Ipv6Addr, prefix: u32) -> bool {
 
 // ── Correlate bridge/bond/vrf ─────────────────────────────────────────────────
 
-fn correlate_members_and_uplinks(ifaces: &mut [IfaceData]) {
+fn correlate_members_and_uplinks(ifaces: &mut [IfaceData], runner: &impl CommandRunner) {
     let uplink_types = ["bond", "bridge", "vrf"];
     let mut members_to_uplink: HashMap<String, (String, &'static str)> = HashMap::new();
     let mut uplink_to_members: HashMap<String, Vec<String>> = HashMap::new();
@@ -1100,7 +1134,7 @@ fn correlate_members_and_uplinks(ifaces: &mut [IfaceData]) {
         .collect();
 
     for (name, utype) in &uplinks {
-        let members = query_members(name);
+        let members = query_members(name, runner);
         for member in &members {
             members_to_uplink.insert(member.clone(), (name.clone(), utype));
         }

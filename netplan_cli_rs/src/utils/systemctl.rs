@@ -17,9 +17,9 @@
 
 use std::process::{Command, Stdio};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
-use super::{check_cmd, run_cmd};
+use super::process::CommandRunner;
 
 pub const NM_SERVICE_NAME: &str = "NetworkManager.service";
 pub const NM_SNAP_SERVICE_NAME: &str = "snap.network-manager.networkmanager.service";
@@ -28,7 +28,7 @@ pub const NM_SNAP_SERVICE_NAME: &str = "snap.network-manager.networkmanager.serv
 ///
 /// Uses `--no-block` when `sync=false`. Ignores errors (best-effort),
 /// matching Python behaviour where service restarts may fail gracefully.
-pub fn run(action: &str, services: &[&str], sync: bool) {
+pub fn run(action: &str, services: &[&str], sync: bool, runner: &impl CommandRunner) {
     if services.is_empty() {
         return;
     }
@@ -37,12 +37,20 @@ pub fn run(action: &str, services: &[&str], sync: bool) {
         args.push("--no-block");
     }
     args.extend_from_slice(services);
-    let _ = run_cmd("systemctl", &args);
+    let _ = super::process::Command::new("systemctl")
+        .args(args)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .run_with(runner);
 }
 
-pub fn daemon_reload() -> Result<()> {
-    check_cmd("systemctl", &["daemon-reload", "--no-ask-password"])
-        .context("systemctl daemon-reload failed")
+pub fn daemon_reload(runner: &impl CommandRunner) -> Result<()> {
+    super::process::Command::new("systemctl")
+        .args(["daemon-reload", "--no-ask-password"])
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .run_with(runner)?;
+    Ok(())
 }
 
 pub fn is_enabled(unit: &str) -> bool {
@@ -56,11 +64,11 @@ pub fn is_enabled(unit: &str) -> bool {
 
 /// Start or stop NetworkManager, using the snap service name if the snap is
 /// enabled.
-pub fn network_manager(action: &str, sync: bool) {
+pub fn network_manager(action: &str, sync: bool, runner: &impl CommandRunner) {
     let svc = if is_enabled(NM_SNAP_SERVICE_NAME) {
         NM_SNAP_SERVICE_NAME
     } else {
         NM_SERVICE_NAME
     };
-    run(action, &[svc], sync);
+    run(action, &[svc], sync, runner);
 }

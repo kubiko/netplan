@@ -21,12 +21,10 @@
 pub mod iface;
 pub mod networkd;
 pub mod nm;
-pub mod runner;
+pub mod process;
 pub mod systemctl;
 
 use std::path::{Path, PathBuf};
-
-use anyhow::Result;
 
 // ── Paths ─────────────────────────────────────────────────────────────────────
 
@@ -132,18 +130,6 @@ pub fn split_dotted_path(key: &str) -> Vec<String> {
     }
     parts.push(current);
     parts
-}
-
-// ── Subprocess helpers ────────────────────────────────────────────────────────
-
-/// Run `program args…` and return the exit code.  stdout/stderr are inherited.
-pub fn run_cmd(program: &str, args: &[&str]) -> i32 {
-    runner::run(program, args)
-}
-
-/// Run `program args…` and fail if the exit code is non-zero.
-pub fn check_cmd(program: &str, args: &[&str]) -> Result<()> {
-    runner::check(program, args)
 }
 
 // ── Glob helpers ──────────────────────────────────────────────────────────────

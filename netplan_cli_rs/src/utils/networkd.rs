@@ -19,20 +19,28 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 
-use super::check_cmd;
+use super::process::CommandRunner;
 
-pub fn reload() -> Result<()> {
-    check_cmd("networkctl", &["reload"]).context("networkctl reload failed")
+pub fn reload(runner: &impl CommandRunner) -> Result<()> {
+    super::process::Command::new("networkctl")
+        .args(["reload"])
+        .run_with(runner)
+        .context("networkctl reload failed")?;
+    Ok(())
 }
 
-pub fn reconfigure(ifaces: &[String]) -> Result<()> {
+pub fn reconfigure(ifaces: &[String], runner: &impl CommandRunner) -> Result<()> {
     if ifaces.is_empty() {
         return Ok(());
     }
     let mut args = vec!["reconfigure"];
     let refs: Vec<&str> = ifaces.iter().map(String::as_str).collect();
     args.extend_from_slice(&refs);
-    check_cmd("networkctl", &args).context("networkctl reconfigure failed")
+    super::process::Command::new("networkctl")
+        .args(args)
+        .run_with(runner)
+        .context("networkctl reconfigure failed")?;
+    Ok(())
 }
 
 /// Returns the link indices of networkd-managed interfaces by parsing

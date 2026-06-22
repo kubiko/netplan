@@ -34,6 +34,8 @@ use jiff::Timestamp;
 use anyhow::{Context, Result};
 use clap::Args;
 
+use crate::utils::process::CommandRunner;
+
 const DEFAULT_TIMEOUT: u64 = 120;
 
 // ── Signal constants (Linux) ──────────────────────────────────────────────────
@@ -98,7 +100,7 @@ pub struct TryArgs {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: TryArgs) -> Result<ExitCode> {
+pub fn run(args: TryArgs, runner: &impl CommandRunner) -> Result<ExitCode> {
     let rootdir = std::env::var("DBUS_TEST_NETPLAN_ROOT").unwrap_or_else(|_| "/".to_string());
     let stamp = format!(
         "{}run/netplan/netplan-try.ready",
@@ -144,7 +146,7 @@ pub fn run(args: TryArgs) -> Result<ExitCode> {
         apply_args.push("--state");
         apply_args.push(s);
     }
-    let apply_rc = run_self(&apply_args)?;
+    let apply_rc = run_self(&apply_args, runner)?;
     if apply_rc != 0 {
         return Ok(ExitCode::from(apply_rc as u8));
     }
@@ -165,7 +167,13 @@ pub fn run(args: TryArgs) -> Result<ExitCode> {
         }
         Outcome::Rejected => {
             println!("\nReverting.");
-            if let Err(e) = revert(&rootdir, &backup_dir, &stamp, extra_file_dest.as_deref()) {
+            if let Err(e) = revert(
+                &rootdir,
+                &backup_dir,
+                &stamp,
+                extra_file_dest.as_deref(),
+                runner,
+            ) {
                 eprintln!("[netplan] Revert failed: {}", e);
             }
         }
@@ -232,6 +240,7 @@ fn revert(
     backup_dir: &str,
     stamp: &str,
     extra_file_dest: Option<&str>,
+    runner: &impl CommandRunner,
 ) -> Result<()> {
     // 1. Save current /etc/netplan as the "tried state" for apply --state
     let state_dir = make_tempdir("netplan-revert-state-")?;
@@ -257,7 +266,7 @@ fn revert(
     clear_stamp(stamp);
 
     // 5. Re-apply with --state pointing to the tried config (best-effort)
-    match run_self(&["apply", "--state", state_dir.as_str()]) {
+    match run_self(&["apply", "--state", state_dir.as_str()], runner) {
         Ok(rc) if rc != 0 => {
             eprintln!("[netplan] Warning: apply during revert exited with code {rc}")
         }
@@ -366,11 +375,23 @@ fn clear_stamp(path: &str) {
 // ── Run self as subprocess ────────────────────────────────────────────────────
 
 /// Invoke the current binary with `args` and return the raw exit code.
-fn run_self(args: &[&str]) -> Result<i32> {
+fn run_self(args: &[&str], runner: &impl CommandRunner) -> Result<i32> {
+    use crate::utils::process::{Command, ProcessError};
+    use std::process::Stdio;
     let exe = std::env::current_exe().context("Cannot determine current executable path")?;
     let exe_str = exe.to_string_lossy();
-    let rc = crate::utils::runner::run(&exe_str, args);
-    Ok(rc)
+    match Command::new(&exe_str)
+        .args(args.iter().copied())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .run_with(runner)
+    {
+        Ok(_) => Ok(0),
+        Err(e) => match e.downcast::<ProcessError>() {
+            Ok(pe) => Ok(pe.status.code().unwrap_or(1)),
+            Err(e) => Err(e),
+        },
+    }
 }
 
 // ── Tree copy ─────────────────────────────────────────────────────────────────

@@ -24,6 +24,8 @@ use std::process::ExitCode;
 use anyhow::{anyhow, Context, Result};
 use clap::{Args, Subcommand};
 
+use crate::utils::process::CommandRunner;
+
 // ── Argument types ────────────────────────────────────────────────────────────
 
 #[derive(Args, Debug)]
@@ -50,16 +52,16 @@ pub struct LeasesArgs {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn run(args: IpArgs) -> Result<ExitCode> {
+pub fn run(args: IpArgs, runner: &impl CommandRunner) -> Result<ExitCode> {
     match args.subcommand {
-        Some(IpSubcommand::Leases(a)) => run_leases(a),
+        Some(IpSubcommand::Leases(a)) => run_leases(a, runner),
         None => Err(anyhow!("Available commands:\n  leases   Display IP leases")),
     }
 }
 
 // ── ip leases ─────────────────────────────────────────────────────────────────
 
-fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
+fn run_leases(args: LeasesArgs, runner: &impl CommandRunner) -> Result<ExitCode> {
     let iface = &args.interface;
     let root_dir = &args.root_dir;
 
@@ -95,7 +97,7 @@ fn run_leases(args: LeasesArgs) -> Result<ExitCode> {
 
     let lease_result = match backend {
         "networkd" => find_networkd_lease(iface, root_dir),
-        "NetworkManager" => find_nm_lease(iface, root_dir),
+        "NetworkManager" => find_nm_lease(iface, root_dir, runner),
         other => return Err(anyhow!("unknown backend '{other}' for interface '{iface}'")),
     };
 
@@ -132,18 +134,21 @@ fn find_networkd_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     }
 }
 
-fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
-    // Step 1: get the NM connection name via `nmcli dev show <iface>`.
-    let dev_out = crate::utils::runner::output("nmcli", &["dev", "show", iface])
-        .context("failed to run nmcli dev show")?;
+fn find_nm_lease(iface: &str, root_dir: &str, runner: &impl CommandRunner) -> Result<PathBuf> {
+    use crate::utils::process::{Command, ProcessError};
 
-    if !dev_out.status.success() {
-        return Err(anyhow!(
-            "Could not find a NetworkManager connection for the interface: \
-             nmcli exited with {}",
-            dev_out.status
-        ));
-    }
+    // Step 1: get the NM connection name via `nmcli dev show <iface>`.
+    let dev_out = Command::new("nmcli")
+        .args(["dev", "show", iface])
+        .run_with(runner)
+        .map_err(|e| match e.downcast::<ProcessError>() {
+            Ok(pe) => anyhow!(
+                "Could not find a NetworkManager connection for the interface: \
+                 nmcli exited with {}",
+                pe.status
+            ),
+            Err(e) => e,
+        })?;
 
     let dev_text = String::from_utf8_lossy(&dev_out.stdout);
     let conn_id = dev_text
@@ -158,16 +163,17 @@ fn find_nm_lease(iface: &str, root_dir: &str) -> Result<PathBuf> {
     })?;
 
     // Step 2: get the connection UUID via `nmcli con show id <conn_id>`.
-    let con_out = crate::utils::runner::output("nmcli", &["con", "show", "id", &conn_id])
-        .context("failed to run nmcli con show")?;
-
-    if !con_out.status.success() {
-        return Err(anyhow!(
-            "Could not find a NetworkManager connection for the interface: \
-             nmcli exited with {}",
-            con_out.status
-        ));
-    }
+    let con_out = Command::new("nmcli")
+        .args(["con", "show", "id", &conn_id])
+        .run_with(runner)
+        .map_err(|e| match e.downcast::<ProcessError>() {
+            Ok(pe) => anyhow!(
+                "Could not find a NetworkManager connection for the interface: \
+                 nmcli exited with {}",
+                pe.status
+            ),
+            Err(e) => e,
+        })?;
 
     let con_text = String::from_utf8_lossy(&con_out.stdout);
     let uuid = con_text
